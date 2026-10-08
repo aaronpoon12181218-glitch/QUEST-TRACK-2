@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>불꽃놀이</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05060f; }
+  canvas { display: block; cursor: crosshair; touch-action: none; }
+
+  .guide {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    padding: 12px 22px; border-radius: 14px;
+    background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff; font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    font-size: 15px; line-height: 1.6; text-align: center;
+    pointer-events: none; transition: opacity 1s;
+  }
+  .guide b { color: #ffd76a; }
+
+  .power {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    width: min(320px, 80vw); pointer-events: none;
+    color: #fff; font-family: "Malgun Gothic", sans-serif; font-size: 13px; text-align: center;
+  }
+  .bar { margin-top: 6px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+  .fill { height: 100%; width: 0%; border-radius: 4px;
+          background: linear-gradient(90deg, #4fc3ff, #c46bff, #ff5e7e, #ffd76a); transition: width 0.15s; }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+
+<div class="guide" id="guide">
+  🎆 <b>화면 아무 곳이나 클릭</b>하면 불꽃이 터져요<br>
+  <b>빠르게 여러 번</b> 누를수록 불꽃이 점점 커져요<br>
+  터질 때마다 <b>모양이 바뀌어요</b> (하트, 별, 고리 등 7가지)
+</div>
+
+<div class="power">
+  <div id="shapeText" style="margin-bottom: 4px; opacity: 0.8;">&nbsp;</div>
+  <span id="powerText">불꽃 크기 1단계</span>
+  <div class="bar"><div class="fill" id="powerFill"></div></div>
+</div>
+
+<script>
+  const canvas = document.getElementById('sky');
+  const ctx = canvas.getContext('2d');
+  const guide = document.getElementById('guide');
+  const powerText = document.getElementById('powerText');
+  const powerFill = document.getElementById('powerFill');
+  const shapeText = document.getElementById('shapeText');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const particles = [];
+
+  // 색이 매번 다르게: 황금각(약 137.5도)씩 색상을 돌려서 연속으로 눌러도 비슷한 색이 안 나오게 함
+  let hue = Math.random() * 360;
+  function nextHue() {
+    hue = (hue + 137.5 + Math.random() * 20) % 360;
+    return hue;
+  }
+
+  // 많이 누를수록 커지는 불꽃: 누를 때마다 파워가 쌓이고, 가만히 있으면 천천히 줄어듦
+  const MAX_POWER = 10;
+  let power = 1;
+  let lastClick = 0;
+
+  function updatePowerUI() {
+    const level = Math.floor(power);
+    powerText.textContent = '불꽃 크기 ' + level + '단계' + (level >= MAX_POWER ? ' (최대!)' : '');
+    powerFill.style.width = ((power - 1) / (MAX_POWER - 1) * 100) + '%';
+  }
+
+  class Particle {
+    // vx, vy: 처음 날아가는 방향과 속도 / opt: 모양마다 다른 움직임 설정
+    constructor(x, y, vx, vy, hue, size, life, opt = {}) {
+      this.x = x; this.y = y;
+      this.px = x; this.py = y;          // 직전 위치 (꼬리 선을 그리기 위해)
+      this.vx = vx;
+      this.vy = vy;
+      this.hue = hue;
+      this.size = size;
+      this.life = life;
+      this.maxLife = life;
+      this.twinkle = opt.twinkle ?? Math.random() < 0.3; // 일부는 반짝반짝
+      this.friction = opt.friction ?? 0.975;             // 공기 저항 → 천천히 흩어짐
+      this.gravity = opt.gravity ?? 0.035;               // 아주 약한 중력
+      this.sat = opt.sat ?? 100;                         // 채도 (버드나무는 금빛이라 낮춤)
+    }
+    update() {
+      this.px = this.x; this.py = this.y;
+      this.vx *= this.friction;
+      this.vy *= this.friction;
+      this.vy += this.gravity;
+      this.x += this.vx;
+      this.y += this.vy;
+      this.life--;
+    }
+    draw() {
+      const t = this.life / this.maxLife;           // 1 → 0
+      let alpha = t;
+      if (this.twinkle && Math.random() < 0.3) alpha *= 0.3;
+      const light = 50 + (1 - t) * 20;
+      ctx.strokeStyle = `hsla(${this.hue}, ${this.sat}%, ${light}%, ${alpha})`;
+      ctx.lineWidth = this.size * (0.5 + t * 0.5);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(this.px, this.py);
+      ctx.lineTo(this.x, this.y);
+      ctx.stroke();
+    }
+  }
+
+  // ----- 터지는 모양들 -----
+  // 각 모양은 (x, y, 색, 알갱이 수, 속도, 수명)을 받아서 알갱이를 만들어 넣음
+  // 하트·별·고리처럼 윤곽이 있는 모양은 모든 알갱이가 똑같이 느려지므로 모양이 유지된 채로 커짐
+  const outline = { twinkle: false, gravity: 0.012 }; // 윤곽 모양은 중력을 약하게 해서 덜 찌그러지게
+
+  const SHAPES = [
+    {
+      name: '국화', // 기본 둥근 불꽃
+      make(x, y, hue, count, speed, life) {
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count + Math.random() * 0.1;
+          const s = speed * (0.4 + Math.random() * 0.6);
+          const h = hue + (Math.random() * 40 - 20);   // 한 불꽃 안에서도 살짝씩 다른 색
+          particles.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, h,
+            1.5 + Math.random() * 1.5, life + Math.random() * 40));
+        }
+      }
+    },
+    {
+      name: '하트',
+      make(x, y, hue, count, speed, life) {
+        for (let i = 0; i < count; i++) {
+          const t = (Math.PI * 2 * i) / count;
+          // 하트 곡선 공식 (크기를 약 1로 맞춤)
+          const hx = 16 * Math.sin(t) ** 3 / 16;
+          const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 16;
+          particles.push(new Particle(x, y, hx * speed, hy * speed, hue + Math.random() * 10, 2, life + 20, outline));
+        }
+      }
+    },
+    {
+      name: '별',
+      make(x, y, hue, count, speed, life) {
+        const tips = 5;
+        const rot = Math.random() * Math.PI * 2;
+        for (let i = 0; i < count; i++) {
+          // 바깥 꼭짓점 ↔ 안쪽 꼭짓점을 직선으로 이어서 별 테두리를 만듦
+          const seg = (i / count) * tips * 2;
+          const k = Math.floor(seg), f = seg - k;
+          const r1 = k % 2 === 0 ? 1 : 0.42, r2 = k % 2 === 0 ? 0.42 : 1;
+          const a1 = rot + (k / (tips * 2)) * Math.PI * 2, a2 = rot + ((k + 1) / (tips * 2)) * Math.PI * 2;
+          const sx = Math.cos(a1) * r1 * (1 - f) + Math.cos(a2) * r2 * f;
+          const sy = Math.sin(a1) * r1 * (1 - f) + Math.sin(a2) * r2 * f;
+          particles.push(new Particle(x, y, sx * speed, sy * speed, hue + Math.random() * 10, 2, life + 20, outline));
+        }
+      }
+    },
+    {
+      name: '고리', // 비스듬히 기운 동그란 고리
+      make(x, y, hue, count, speed, life) {
+        const tilt = Math.random() * Math.PI;
+        const squash = 0.35 + Math.random() * 0.4;      // 납작한 정도
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count;
+          const rx = Math.cos(a), ry = Math.sin(a) * squash;
+          const vx = rx * Math.cos(tilt) - ry * Math.sin(tilt);
+          const vy = rx * Math.sin(tilt) + ry * Math.cos(tilt);
+          particles.push(new Particle(x, y, vx * speed, vy * speed, hue, 2, life + 10, outline));
+        }
+      }
+    },
+    {
+      name: '이중 고리', // 색이 다른 고리 두 개
+      make(x, y, hue, count, speed, life) {
+        const other = (hue + 150) % 360;
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count;
+          const outer = i % 2 === 0;
+          const s = speed * (outer ? 1 : 0.55);
+          particles.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, outer ? hue : other, 2, life + 10, outline));
+        }
+      }
+    },
+    {
+      name: '버드나무', // 금빛 꼬리가 축 늘어지며 떨어짐
+      make(x, y, hue, count, speed, life) {
+        for (let i = 0; i < count; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const s = speed * (0.3 + Math.random() * 0.5);
+          particles.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, 40 + Math.random() * 10,
+            1.2 + Math.random(), life * 1.8 + Math.random() * 40,
+            { gravity: 0.05, friction: 0.965, sat: 70, twinkle: true }));
+        }
+      }
+    },
+    {
+      name: '바람개비', // 빙글 도는 팔 여러 개
+      make(x, y, hue, count, speed, life) {
+        const arms = 4 + Math.floor(Math.random() * 3);
+        const rot = Math.random() * Math.PI * 2;
+        for (let i = 0; i < count; i++) {
+          const arm = i % arms;
+          const d = Math.random();                       // 팔의 안쪽(0) ~ 바깥쪽(1)
+          const a = rot + (arm / arms) * Math.PI * 2 + d * 1.6; // 바깥으로 갈수록 휘어짐
+          const s = speed * (0.2 + d * 0.8);
+          const h = hue + (arm % 2) * 40;
+          particles.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, h, 1.8, life + 10, outline));
+        }
+      }
+    },
+  ];
+
+  // 모양도 매번 다르게: 바로 전과 같은 모양은 나오지 않게 함
+  let lastShape = -1;
+  function nextShape() {
+    let i;
+    do { i = Math.floor(Math.random() * SHAPES.length); } while (i === lastShape);
+    lastShape = i;
+    return SHAPES[i];
+  }
+
+  function explode(x, y) {
+    const baseHue = nextHue();
+    const p = power;
+    const count = Math.floor(60 + p * 25);          // 1단계 85개 → 10단계 310개
+    const speed = 2.5 + p * 0.7;                    // 클수록 멀리 퍼짐
+    const life = Math.floor(90 + p * 8);            // 클수록 오래 남음
+
+    const shape = nextShape();
+    shape.make(x, y, baseHue, count, speed, life);
+    shapeText.textContent = '방금 터진 모양: ' + shape.name;
+
+    // 파워가 높으면 가운데에 반대 색 알갱이를 더 흩뿌림
+    if (p >= 4) {
+      const innerHue = (baseHue + 180) % 360;
+      const innerCount = Math.floor(count * 0.3);
+      for (let i = 0; i < innerCount; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = speed * 0.4 * Math.random();
+        particles.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, innerHue, 2, life * 0.8));
+      }
+    }
+
+    // 터지는 순간 번쩍
+    const flash = ctx.createRadialGradient(x, y, 0, x, y, 40 + p * 12);
+    flash.addColorStop(0, `hsla(${baseHue}, 100%, 90%, 0.9)`);
+    flash.addColorStop(1, `hsla(${baseHue}, 100%, 60%, 0)`);
+    ctx.fillStyle = flash;
+    ctx.beginPath();
+    ctx.arc(x, y, 40 + p * 12, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    const now = performance.now();
+    // 빨리 연달아 누르면 많이, 천천히 눌러도 조금씩 커짐
+    power = Math.min(MAX_POWER, power + (now - lastClick < 600 ? 1 : 0.5));
+    lastClick = now;
+    updatePowerUI();
+    explode(e.clientX, e.clientY);
+    guide.style.opacity = '0.35';
+  });
+
+  function loop() {
+    // 꼬리처럼 남는 빛: 화면을 완전히 지우지 않고 반투명하게 덮어서 이전 그림이 서서히 사라지게 함
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(5, 6, 15, 0.12)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.globalCompositeOperation = 'lighter';     // 빛이 겹치면 더 밝게
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const pt = particles[i];
+      pt.update();
+      pt.draw();
+      if (pt.life <= 0) particles.splice(i, 1);
+    }
+
+    // 1.5초 동안 안 누르면 파워가 천천히 줄어듦
+    if (power > 1 && performance.now() - lastClick > 1500) {
+      power = Math.max(1, power - 0.01);
+      updatePowerUI();
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  updatePowerUI();
+  loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>황금종</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #ece9e2; }
+  canvas { display: block; cursor: pointer; touch-action: none; }
+
+  .hint {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    padding: 10px 20px; border-radius: 12px; max-width: calc(100% - 32px);
+    background: rgba(0, 0, 0, 0.75); color: #fff; text-align: center;
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; font-size: 15px; line-height: 1.5;
+    pointer-events: none;
+  }
+  .hint b { color: #ffd34d; }
+
+  .buttons { position: fixed; top: 14px; right: 14px; display: flex; gap: 8px; }
+  .buttons button {
+    padding: 8px 14px; border: 2px solid #111; border-radius: 10px; background: #fff;
+    font-family: "Malgun Gothic", sans-serif; font-size: 14px; font-weight: bold; cursor: pointer;
+  }
+  .buttons button:hover { background: #ffe9a8; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div class="buttons">
+  <button id="soundBtn">🔊 소리 켜짐</button>
+  <button id="replayBtn">↺ 처음부터</button>
+</div>
+
+<div class="hint" id="hint">
+  🔔 <b>화면을 클릭</b>하면 황금종이 울려요<br>
+  장면이 끝난 뒤에도 클릭할 때마다 종이 다시 울려요
+</div>
+
+<script>
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  const hint = document.getElementById('hint');
+  const soundBtn = document.getElementById('soundBtn');
+  const replayBtn = document.getElementById('replayBtn');
+
+  // 그림은 가로 1600 × 세로 1000 크기의 "가상 종이"에 그리고, 화면 크기에 맞춰 늘리거나 줄임
+  const VW = 1600, VH = 1000;
+  let W, H, S, OX, OY;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    S = Math.min(W / VW, H / VH);
+    OX = (W - VW * S) / 2;
+    OY = (H - VH * S) / 2;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const now = () => performance.now() / 1000;
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  const easeOutBack = (k) => 1 + 2.7 * (k - 1) ** 3 + 1.7 * (k - 1) ** 2;
+
+  // ---------------- 소리 (파일 없이 브라우저에서 직접 만듦) ----------------
+  let audio = null;
+  let soundOn = true;
+
+  function bellSound(vol) {
+    if (!audio || !soundOn) return;
+    const t = audio.currentTime;
+    const master = audio.createGain();
+    master.gain.value = vol;
+    master.connect(audio.destination);
+    // 종소리는 서로 딱 맞지 않는 여러 높이의 소리가 섞여서 "카라앙" 하고 울림
+    const partials = [[0.5, 0.6, 6], [1, 1, 5], [1.19, 0.5, 3.5], [1.56, 0.4, 3], [2, 0.45, 2.5], [2.74, 0.3, 1.8], [3, 0.25, 1.4], [4.07, 0.15, 0.9]];
+    const base = 330;
+    for (const [ratio, amp, dur] of partials) {
+      const osc = audio.createOscillator();
+      const g = audio.createGain();
+      osc.frequency.value = base * ratio;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(amp * 0.18, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g); g.connect(master);
+      osc.start(t); osc.stop(t + dur + 0.1);
+    }
+  }
+
+  function boomSound() {
+    if (!audio || !soundOn) return;
+    const t = audio.currentTime;
+    // 낮게 "쿵" 하는 소리
+    const osc = audio.createOscillator();
+    const g = audio.createGain();
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.exponentialRampToValueAtTime(35, t + 0.6);
+    g.gain.setValueAtTime(0.7, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    osc.connect(g); g.connect(audio.destination);
+    osc.start(t); osc.stop(t + 0.8);
+    // 바람 같은 "쏴아" 소리
+    const len = audio.sampleRate * 0.5;
+    const buf = audio.createBuffer(1, len, audio.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const noise = audio.createBufferSource();
+    const ng = audio.createGain();
+    const filter = audio.createBiquadFilter();
+    filter.type = 'lowpass'; filter.frequency.value = 900;
+    noise.buffer = buf;
+    ng.gain.value = 0.35;
+    noise.connect(filter); filter.connect(ng); ng.connect(audio.destination);
+    noise.start(t);
+  }
+
+  soundBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? '🔊 소리 켜짐' : '🔇 소리 꺼짐';
+  });
+
+  // ---------------- 배경: 바람에 흘러가는 구름 줄무늬 ----------------
+  const streaks = [];
+  for (let i = 0; i < 90; i++) {
+    streaks.push({
+      x: Math.random() * 2400 - 400,
+      y: Math.random() * 1000 - 150,
+      len: 300 + Math.random() * 700,
+      amp: 6 + Math.random() * 18,
+      ph: Math.random() * 10,
+      speed: 15 + Math.random() * 35,
+      width: 1 + Math.random() * 2.5,
+    });
+  }
+
+  function drawSky(t) {
+    const g = ctx.createLinearGradient(0, 0, 0, VH);
+    g.addColorStop(0, '#f7f6f2');
+    g.addColorStop(0.7, '#e4e1da');
+    g.addColorStop(1, '#d6d3cc');
+    ctx.fillStyle = g;
+    ctx.fillRect(-2000, -2000, VW + 4000, VH + 4000);
+
+    ctx.lineCap = 'round';
+    for (const s of streaks) {
+      const x = ((s.x + t * s.speed) % 2400 + 2400) % 2400 - 400;
+      ctx.beginPath();
+      for (let k = 0; k <= s.len; k += 30) {
+        const px = x + k;
+        const py = s.y + k * 0.18 + Math.sin(k * 0.02 + s.ph + t * 0.5) * s.amp;
+        k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      // 두껍고 흐린 선(구름 덩어리) + 얇고 진한 선(펜 선)
+      ctx.strokeStyle = 'rgba(120, 115, 105, 0.06)';
+      ctx.lineWidth = 26;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(60, 55, 50, 0.22)';
+      ctx.lineWidth = s.width;
+      ctx.stroke();
+    }
+  }
+
+  // ---------------- 아래쪽 구름바다와 섬 ----------------
+  const trees = [];
+  for (let i = 0; i < 40; i++) trees.push({ x: 1080 + Math.random() * 560, y: 830 + Math.random() * 30, r: 16 + Math.random() * 26 });
+  for (let i = 0; i < 14; i++) trees.push({ x: 600 + Math.random() * 180, y: 845 + Math.random() * 20, r: 12 + Math.random() * 18 });
+  const hatch = [];
+  for (let i = 0; i < 160; i++) hatch.push({ x: Math.random() * 2000 - 200, y: 870 + Math.random() * 140, w: 20 + Math.random() * 70 });
+
+  function drawGround() {
+    // 멀리 보이는 유적
+    ctx.fillStyle = 'rgba(80, 75, 70, 0.25)';
+    ctx.fillRect(1370, 700, 34, 150);
+    ctx.fillRect(1415, 735, 26, 115);
+    ctx.fillRect(1340, 760, 22, 90);
+
+    ctx.fillStyle = '#c9c5bd';
+    ctx.beginPath();
+    ctx.moveTo(-500, 870);
+    for (let x = -500; x <= 2100; x += 40) ctx.lineTo(x, 865 + Math.sin(x * 0.03) * 6);
+    ctx.lineTo(2100, 1600); ctx.lineTo(-500, 1600);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.3)';
+    ctx.lineWidth = 1.5;
+    for (const h of hatch) {
+      ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(h.x + h.w, h.y); ctx.stroke();
+    }
+
+    for (const tr of trees) {
+      ctx.fillStyle = '#2e2e2e';
+      ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.beginPath(); ctx.arc(tr.x - tr.r * 0.3, tr.y - tr.r * 0.4, tr.r * 0.3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // ---------------- 황금종 ----------------
+  const BELL = { x: 1250, y: 150 };
+  const rings = [];       // 종이 울린 시각들
+  let lastRing = -100;
+  const sparks = [];
+
+  function ring(vol) {
+    const t = now();
+    rings.push(t);
+    lastRing = t;
+    bellSound(vol);
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 2 + Math.random() * 5;
+      sparks.push({ x: BELL.x, y: BELL.y + 180, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 2, life: 1 });
+    }
+  }
+
+  function drawBell(t) {
+    const since = t - lastRing;
+    const energy = since < 0 ? 0 : Math.exp(-since * 0.8);
+    const swing = 0.35 * Math.sin(since * 7) * Math.exp(-since * 0.9);
+
+    // 울릴 때 퍼지는 금빛 원
+    for (const rt of rings) {
+      for (let j = 0; j < 3; j++) {
+        const tt = t - rt - j * 0.18;
+        if (tt <= 0 || tt > 2.5) continue;
+        const k = tt / 2.5;
+        ctx.strokeStyle = `rgba(230, 170, 30, ${(1 - k) * 0.7})`;
+        ctx.lineWidth = 6 * (1 - k) + 1;
+        ctx.beginPath(); ctx.arc(BELL.x, BELL.y + 100, 80 + tt * 450, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    while (rings.length && t - rings[0] > 3) rings.shift();
+
+    // 뒤쪽 빛
+    const glow = ctx.createRadialGradient(BELL.x, BELL.y + 100, 0, BELL.x, BELL.y + 100, 300);
+    glow.addColorStop(0, `rgba(255, 210, 80, ${0.15 + energy * 0.6})`);
+    glow.addColorStop(1, 'rgba(255, 210, 80, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(BELL.x - 300, BELL.y - 200, 600, 600);
+
+    // 매다는 나무 기둥과 줄
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(BELL.x - 130, BELL.y - 110, 260, 26);
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(BELL.x, BELL.y - 84); ctx.lineTo(BELL.x, BELL.y); ctx.stroke();
+
+    ctx.save();
+    ctx.translate(BELL.x, BELL.y);
+    ctx.rotate(swing);
+
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(0, -8, 14, 0, Math.PI * 2); ctx.stroke();
+
+    // 종 몸통
+    const body = new Path2D();
+    body.moveTo(-25, 0);
+    body.quadraticCurveTo(-70, 10, -75, 80);
+    body.quadraticCurveTo(-80, 150, -110, 175);
+    body.lineTo(110, 175);
+    body.quadraticCurveTo(80, 150, 75, 80);
+    body.quadraticCurveTo(70, 10, 25, 0);
+    body.closePath();
+    const gold = ctx.createLinearGradient(-110, 0, 110, 0);
+    gold.addColorStop(0, '#7a4d00');
+    gold.addColorStop(0.3, '#ffd75a');
+    gold.addColorStop(0.45, '#fff3c0');
+    gold.addColorStop(0.7, '#e0a820');
+    gold.addColorStop(1, '#6e4400');
+    ctx.fillStyle = gold;
+    ctx.fill(body);
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 4;
+    ctx.stroke(body);
+
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-74, 60); ctx.quadraticCurveTo(0, 72, 74, 60); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-85, 140); ctx.quadraticCurveTo(0, 154, 85, 140); ctx.stroke();
+
+    ctx.fillStyle = '#9a6400';
+    ctx.beginPath(); ctx.ellipse(0, 175, 110, 14, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    // 추 (종이 흔들리면 반대로 살짝 늦게 따라옴)
+    ctx.fillStyle = '#6e4400';
+    ctx.beginPath(); ctx.arc(-swing * 60, 192, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // 반짝이 가루
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const p = sparks[i];
+      p.vx *= 0.98; p.vy = p.vy * 0.98 + 0.05;
+      p.x += p.vx; p.y += p.vy;
+      p.life -= 0.008;
+      if (p.life <= 0) { sparks.splice(i, 1); continue; }
+      ctx.fillStyle = `rgba(255, 200, 40, ${p.life})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3 + p.life * 3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // ---------------- 집중선 ----------------
+  const focusLines = [];
+  for (let i = 0; i < 100; i++) focusLines.push({ a: Math.random() * Math.PI * 2, w: 0.004 + Math.random() * 0.012 });
+
+  function drawFocusLines(cx, cy, alpha) {
+    if (alpha <= 0) return;
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+    for (const f of focusLines) {
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(f.a) * 330, cy + Math.sin(f.a) * 330);
+      ctx.lineTo(cx + Math.cos(f.a - f.w) * 1900, cy + Math.sin(f.a - f.w) * 1900);
+      ctx.lineTo(cx + Math.cos(f.a + f.w) * 1900, cy + Math.sin(f.a + f.w) * 1900);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // ---------------- 하늘로 뛰어오른 주인공의 실루엣 ----------------
+  // 관절(어깨·팔꿈치·무릎 등) 위치를 정하고, 그 사이를 끝으로 갈수록 가늘어지는 덩어리로 이어서 그림
+  // 좌표는 엉덩이를 (0, 0)으로 둔 기준이고, 위쪽이 마이너스
+
+  // a에서 b까지 두께가 wa → wb 로 변하는 팔다리 한 마디
+  function seg(a, b, wa, wb) {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy);
+    const nx = -dy / len, ny = dx / len;
+    ctx.beginPath();
+    ctx.moveTo(a[0] + nx * wa / 2, a[1] + ny * wa / 2);
+    ctx.lineTo(b[0] + nx * wb / 2, b[1] + ny * wb / 2);
+    ctx.lineTo(b[0] - nx * wb / 2, b[1] - ny * wb / 2);
+    ctx.lineTo(a[0] - nx * wa / 2, a[1] - ny * wa / 2);
+    ctx.closePath();
+    ctx.fill();
+    circle(a, wa / 2);
+    circle(b, wb / 2);
+  }
+  function circle(p, r) { ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2); ctx.fill(); }
+  const lerp = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+
+  // 무릎 위까지 오는 반바지 + 끝단
+  function shorts(hip, knee) {
+    const end = lerp(hip, knee, 0.55);
+    seg(hip, end, 56, 50);
+    const ang = Math.atan2(knee[1] - hip[1], knee[0] - hip[0]);
+    ctx.save();
+    ctx.translate(end[0], end[1]);
+    ctx.rotate(ang);
+    ctx.beginPath(); ctx.ellipse(0, 0, 9, 29, 0, 0, Math.PI * 2); ctx.fill();   // 접어 올린 바짓단
+    ctx.restore();
+  }
+
+  // 샌들 신은 발: 발목에서 발끝 방향으로 길쭉하게
+  function foot(ankle, angle) {
+    ctx.save();
+    ctx.translate(ankle[0], ankle[1]);
+    ctx.rotate(angle);
+    ctx.beginPath(); ctx.ellipse(16, 0, 26, 10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(18, 7, 30, 5, 0, 0, Math.PI * 2); ctx.fill();  // 샌들 바닥
+    ctx.restore();
+  }
+
+  function drawHero(t) {
+    ctx.fillStyle = '#0d0d0d';
+    const f = (i) => Math.sin(t * 10 + i * 1.7) * 8;   // 옷자락 펄럭임
+
+    // 관절 위치 (머리 반지름 30을 기준으로 6.5등신 정도)
+    const head = [6, -170];
+    const shL = [-34, -124], shR = [34, -126];
+    const elL = [-92, -176], haL = [-30, -214];      // 모자를 누르고 있는 팔
+    const elR = [96, -146], haR = [158, -132];       // 옆으로 쭉 뻗은 팔
+    const hipL = [-14, 6], hipR = [14, 2];
+    const knR = [112, -22], anR = [220, -66];        // 앞으로 차올린 다리
+    const knL = [-42, 108], anL = [-128, 160];       // 뒤로 접힌 다리
+
+    // 1) 바람에 뒤로 날리는 조끼 자락 (몸 뒤쪽, 가늘고 길게 펄럭임)
+    ctx.beginPath();
+    ctx.moveTo(26, -118);
+    ctx.bezierCurveTo(60, -118, 80, -104 + f(0), 116, -100 + f(0));
+    ctx.lineTo(92, -90 + f(1) * 0.5);
+    ctx.bezierCurveTo(110, -84 + f(1), 104, -70, 124, -62 + f(2));
+    ctx.lineTo(90, -56 + f(2) * 0.5);
+    ctx.bezierCurveTo(80, -50, 70, -46, 76, -36 + f(3));
+    ctx.lineTo(22, -44);
+    ctx.closePath();
+    ctx.fill();
+
+    // 2) 뒤로 접힌 다리
+    seg(knL, anL, 26, 18);
+    seg(hipL, knL, 34, 26);
+    foot(anL, 2.6);
+    shorts(hipL, knL);
+
+    // 3) 몸통: 어깨는 넓고 허리는 잘록하게
+    ctx.beginPath();
+    ctx.moveTo(shL[0] - 4, shL[1] + 4);
+    ctx.quadraticCurveTo(0, -140, shR[0] + 4, shR[1] + 4);
+    ctx.quadraticCurveTo(34, -80, 22, -44);
+    ctx.lineTo(26, 6);
+    ctx.lineTo(-26, 10);
+    ctx.lineTo(-22, -44);
+    ctx.quadraticCurveTo(-36, -80, shL[0] - 4, shL[1] + 4);
+    ctx.closePath();
+    ctx.fill();
+    seg([head[0] - 2, head[1] + 24], [0, -128], 20, 24);   // 목
+
+    // 4) 앞으로 차올린 다리
+    seg(hipR, knR, 34, 26);
+    seg(knR, anR, 26, 18);
+    foot(anR, -0.5);
+    shorts(hipR, knR);
+    ctx.beginPath(); ctx.ellipse(0, 4, 32, 22, -0.1, 0, Math.PI * 2); ctx.fill();  // 반바지 엉덩이
+
+    // 5) 옆으로 뻗은 팔 + 쫙 편 손
+    seg(shR, elR, 22, 17);
+    seg(elR, haR, 16, 13);
+    ctx.save();
+    ctx.translate(haR[0], haR[1]);
+    ctx.rotate(Math.atan2(haR[1] - elR[1], haR[0] - elR[0]));
+    ctx.beginPath(); ctx.ellipse(10, 0, 15, 10, 0, 0, Math.PI * 2); ctx.fill();   // 손바닥
+    for (let i = -1.5; i <= 1.5; i++) seg([18, i * 5], [30, i * 7], 5, 4);         // 손가락
+    seg([4, -8], [14, -18], 6, 5);                                                   // 엄지
+    ctx.restore();
+
+    // 6) 머리 + 삐죽삐죽한 머리카락
+    circle(head, 30);
+    ctx.beginPath(); ctx.ellipse(head[0] + 3, head[1] + 14, 22, 20, 0, 0, Math.PI * 2); ctx.fill(); // 턱
+    const spikes = [[2.4, 15], [2.8, 18], [3.2, 14], [0.9, 10], [0.4, 12]];
+    for (const [a, l] of spikes) {
+      const wob = Math.sin(t * 9 + a * 3) * 0.06;
+      ctx.beginPath();
+      ctx.moveTo(head[0] + Math.cos(a - 0.2) * 27, head[1] + Math.sin(a - 0.2) * 27);
+      ctx.lineTo(head[0] + Math.cos(a + wob) * (28 + l), head[1] + Math.sin(a + wob) * (28 + l));
+      ctx.lineTo(head[0] + Math.cos(a + 0.2) * 27, head[1] + Math.sin(a + 0.2) * 27);
+      ctx.fill();
+    }
+
+    // 7) 밀짚모자: 넓고 납작한 챙 + 둥근 윗부분
+    ctx.save();
+    ctx.translate(head[0] + 2, head[1] - 20);
+    ctx.rotate(-0.15);
+    ctx.beginPath(); ctx.ellipse(0, 0, 64, 12, 0, 0, Math.PI * 2); ctx.fill();   // 챙
+    ctx.beginPath(); ctx.ellipse(0, -1, 34, 28, 0, Math.PI, 0); ctx.fill();     // 윗부분
+    // 실루엣 속에서도 모자인 줄 알 수 있게 띠 부분과 챙 테두리를 살짝 밝게
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(0, -5, 33, 6, 0, Math.PI * 0.05, Math.PI * 0.95); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, 0, 62, 10, 0, Math.PI * 0.1, Math.PI * 0.9); ctx.stroke();
+    ctx.restore();
+
+    // 8) 모자를 꾹 누르고 있는 팔 (모자 위에 겹쳐서)
+    seg(shL, elL, 22, 17);
+    seg(elL, haL, 16, 13);
+    ctx.save();
+    ctx.translate(haL[0], haL[1]);
+    ctx.rotate(0.4);
+    ctx.beginPath(); ctx.ellipse(6, 0, 16, 11, 0, 0, Math.PI * 2); ctx.fill();   // 손바닥
+    ctx.restore();
+  }
+
+  // ---------------- 효과음 글자와 말풍선 ----------------
+  const JP_FONT = '"Yu Gothic", "Meiryo", "MS Gothic", sans-serif';
+  const KR_FONT = '"Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+
+  const BASE_SFX = [
+    { text: 'ドォーン!!', x: 700, y: 110, size: 165, rot: -0.04, at: 0, shake: false },
+    { text: 'カラァーン!!', x: 270, y: 490, size: 95, rot: -0.14, at: 0.7, shake: true },
+    { text: 'カラァーン!!', x: 1010, y: 530, size: 75, rot: -0.1, at: 1.3, shake: true },
+    { text: 'カラァーン', x: 170, y: 950, size: 48, rot: -0.08, at: 1.9, shake: true },
+  ];
+  let sfx = [];
+
+  const BUBBLES = [
+    { text: '거기에\n있었냐…?', x: 230, y: 300, tx: 120, ty: 200, at: 2.2 },
+    { text: '…황금향은…', x: 1090, y: 690, tx: 1030, ty: 790, at: 3.4 },
+    { text: '어이,\n꼬마…', x: 1340, y: 520, tx: 1440, ty: 620, at: 4.6 },
+    { text: '고맙구나…!!!', x: 190, y: 700, tx: 110, ty: 800, at: 5.8 },
+  ];
+
+  function drawSfx(s, t) {
+    const age = t - s.at;
+    if (age < 0) return;
+    const k = clamp01(age / 0.25);
+    let alpha = k;
+    if (s.life) alpha *= clamp01((s.life - age) / 0.6);
+    if (alpha <= 0) return;
+    const scale = 1 + (1 - k) * 1.5;
+    const jitter = s.shake ? Math.exp(-(t - lastRing) * 1.2) * 4 : 0;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(s.x + (Math.random() - 0.5) * jitter, s.y + (Math.random() - 0.5) * jitter);
+    ctx.rotate(s.rot);
+    ctx.scale(scale, scale);
+    ctx.font = `900 ${s.size}px ${JP_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = s.size * 0.14;
+    ctx.strokeText(s.text, 0, 0);
+    ctx.fillStyle = '#111';
+    ctx.fillText(s.text, 0, 0);
+    ctx.restore();
+  }
+
+  function drawBubble(b, t) {
+    const age = t - b.at;
+    if (age < 0) return;
+    const k = clamp01(age / 0.35);
+    const lines = b.text.split('\n');
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.translate(b.x, b.y);
+    const sc = 0.6 + 0.4 * easeOutBack(k);
+    ctx.scale(sc, sc);
+
+    ctx.font = `bold 30px ${KR_FONT}`;
+    const maxW = Math.max(...lines.map((l) => ctx.measureText(l).width));
+    const rx = maxW / 2 + 36, ry = lines.length * 20 + 32;
+
+    // 꼬리 방향
+    const ang = Math.atan2(b.ty - b.y, b.tx - b.x);
+    const p1 = [Math.cos(ang - 0.3) * rx * 0.8, Math.sin(ang - 0.3) * ry * 0.8];
+    const p2 = [Math.cos(ang + 0.3) * rx * 0.8, Math.sin(ang + 0.3) * ry * 0.8];
+    const tip = [b.tx - b.x, b.ty - b.y];
+    const tail = new Path2D();
+    tail.moveTo(p1[0], p1[1]); tail.lineTo(tip[0], tip[1]); tail.lineTo(p2[0], p2[1]); tail.closePath();
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#111';
+    ctx.fillStyle = '#fff';
+    ctx.stroke(tail);
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fill(tail);   // 꼬리와 풍선이 이어진 부분의 테두리를 덮어서 자연스럽게
+
+    ctx.fillStyle = '#111';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    lines.forEach((l, i) => ctx.fillText(l, 0, (i - (lines.length - 1) / 2) * 40));
+    ctx.restore();
+  }
+
+  // ---------------- 장면 진행 ----------------
+  let start = null;        // 첫 클릭 시각
+  let timers = [];
+  let lastHit = -100;      // 화면이 흔들리는 기준 시각
+
+  function begin() {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    start = now();
+    lastHit = start;
+    sfx = BASE_SFX.map((s) => ({ ...s, at: start + s.at }));
+    boomSound();
+    ring(0.9);
+    // 종이 몇 번 더 메아리처럼 울림
+    timers.push(setTimeout(() => ring(0.55), 2400));
+    timers.push(setTimeout(() => ring(0.35), 4800));
+    hint.innerHTML = '🔔 <b>계속 클릭</b>하면 종이 또 울려요 · 오른쪽 위 <b>↺ 처음부터</b>로 다시 보기';
+  }
+
+  function reset() {
+    timers.forEach(clearTimeout);
+    timers = [];
+    start = null;
+    sfx = [];
+    rings.length = 0;
+    sparks.length = 0;
+    lastRing = -100;
+    lastHit = -100;
+    hint.innerHTML = '🔔 <b>화면을 클릭</b>하면 황금종이 울려요<br>장면이 끝난 뒤에도 클릭할 때마다 종이 다시 울려요';
+  }
+
+  replayBtn.addEventListener('click', (e) => { e.stopPropagation(); reset(); });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (start === null) { begin(); return; }
+    if (now() - start < 0.5) return;
+    // 추가 클릭: 클릭한 자리에 "カラァーン" 이 잠깐 떴다가 사라짐
+    ring(0.7);
+    const vx = (e.clientX - OX) / S, vy = (e.clientY - OY) / S;
+    sfx.push({ text: 'カラァーン!!', x: vx, y: vy, size: 50 + Math.random() * 50,
+               rot: (Math.random() - 0.5) * 0.4, at: now(), shake: true, life: 2.5 });
+  });
+
+  function frame() {
+    const t = now();
+    const elapsed = start === null ? -1 : t - start;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#ece9e2';
+    ctx.fillRect(0, 0, W, H);
+
+    // 쾅! 하고 화면이 흔들림
+    const shakeAmt = Math.max(0, 1 - (t - lastHit) / 0.5) * 16;
+    const sx = (Math.random() - 0.5) * shakeAmt, sy = (Math.random() - 0.5) * shakeAmt;
+    ctx.setTransform(S, 0, 0, S, OX + sx * S, OY + sy * S);
+
+    drawSky(t);
+    drawGround();
+    drawBell(t);
+
+    if (elapsed >= 0) {
+      const heroX = 600, heroY = 540;
+      drawFocusLines(heroX, heroY - 60, Math.max(0, 1 - elapsed / 1.4) * 0.85);
+
+      const k = clamp01(elapsed / 0.3);
+      ctx.save();
+      ctx.translate(heroX, heroY + (1 - k) * 140 + Math.sin(t * 2) * 6);
+      ctx.rotate(-0.06 + Math.sin(t * 1.5) * 0.02);
+      const sc = 1.5 * (0.85 + 0.15 * easeOutBack(k));
+      ctx.scale(sc, sc);
+      drawHero(t);
+      ctx.restore();
+
+      for (const b of BUBBLES) drawBubble({ ...b, at: start + b.at }, t);
+      sfx = sfx.filter((s) => !s.life || t - s.at < s.life);
+      for (const s of sfx) drawSfx(s, t);
+
+      // 번쩍
+      const flash = Math.max(0, 1 - elapsed / 0.3) * 0.85;
+      if (flash > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${flash})`;
+        ctx.fillRect(-2000, -2000, VW + 4000, VH + 4000);
+      }
+    }
+
+    requestAnimationFrame(frame);
+  }
+  frame();
+</script>
+</body>
+</html>
