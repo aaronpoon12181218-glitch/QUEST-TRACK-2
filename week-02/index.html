@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>키보드 펫</title>
+<style>
+  :root { --bg:#f3eefc; --ink:#3b2b4f; --card:#ffffff; --muted:#7a6a8e; --accent:#ff8fab; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 16px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui, "Malgun Gothic", sans-serif; user-select: none;
+  }
+  h1 { margin: 0; font-size: 1.4rem; }
+  .hud { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center; }
+  .chip { background: var(--card); border-radius: 999px; padding: 6px 14px; font-size: .95rem; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+  button { font: inherit; border: 0; border-radius: 999px; padding: 6px 14px; background: var(--card); color: var(--ink); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+  button.on { background-color: var(--ink); color: #fff; }
+  button.power.on { background-color: #4cc38a; }
+  button.power { background-color: #b9b0c6; color: #fff; }
+  /* 설정 판 */
+  .panel { width: min(560px, 100%); background: var(--card); border-radius: 18px; padding: 14px 16px; box-shadow: 0 4px 14px rgba(60,30,90,.12); display: grid; gap: 12px; }
+  .panel[hidden] { display: none; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .row > b { width: 64px; font-size: .95rem; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .thumb { width: 64px; height: 64px; padding: 0; border-radius: 14px; background-size: 200% 200%; background-position: 0 0; background-color: #f6f2fb; border: 3px solid transparent; }
+  .thumb.on { border-color: var(--ink); background-color: #f6f2fb; }
+  input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  .vol { width: 40px; text-align: right; color: var(--muted); }
+  .canvas-wrap { width: 560px; max-width: 100%; transition: width .2s; }
+  canvas { display: block; width: 100%; aspect-ratio: 4 / 3; border-radius: 20px; box-shadow: 0 8px 24px rgba(60,30,90,.15); cursor: pointer; touch-action: manipulation; }
+  .rest { width: 100%; aspect-ratio: 4 / 3; border-radius: 20px; background: #e6e0ef; color: var(--muted); display: grid; place-content: center; text-align: center; gap: 10px; font-size: 1.05rem; }
+  .rest[hidden], canvas[hidden] { display: none; }
+  .help { color: var(--muted); font-size: .9rem; text-align: center; line-height: 1.7; margin: 0; }
+</style>
+</head>
+<body>
+  <h1>🐾 키보드 펫</h1>
+  <div class="hud">
+    <span class="chip">누른 횟수 <b id="count">0</b></span>
+    <span class="chip" id="status">깨어 있음</span>
+    <button id="power" class="power on" title="펫 켜기/끄기">⏻ 켜짐</button>
+    <button id="mute" title="소리 켜기/끄기">🔊</button>
+    <button id="gear" title="설정 (Esc)">⚙️ 설정</button>
+  </div>
+
+  <div class="panel" id="panel" hidden>
+    <div class="row"><b>캐릭터</b><div class="seg" id="pets"></div></div>
+    <div class="row"><b>크기</b>
+      <div class="seg" id="sizes">
+        <button data-size="360">작게</button><button data-size="560">보통</button><button data-size="800">크게</button>
+      </div>
+    </div>
+    <div class="row"><b>소리</b><input type="range" id="volume" min="0" max="100" step="5"><span class="vol" id="volText"></span></div>
+    <div class="row"><b>잠들기</b>
+      <div class="seg" id="sleepSeg"><button data-sleep="1">10초 뒤 잠들기</button><button data-sleep="0">안 잠들기</button></div>
+    </div>
+  </div>
+
+  <div class="canvas-wrap" id="wrap">
+    <canvas id="pet"></canvas>
+    <div class="rest" id="rest" hidden><div>😴 펫이 꺼져 있어요</div><div><button class="power" id="powerOn">⏻ 켜기</button></div></div>
+  </div>
+  <p class="help">
+    ⌨️ 키보드를 누르면 연주해요 (왼쪽 글자는 왼손, 오른쪽 글자는 오른손, 스페이스는 두 손)<br>
+    🖱️ 펫을 클릭하면 점프 · 빠르게 누르면 콤보 · <b>Esc</b> 로 설정 열기/닫기 · 설정은 자동으로 저장돼요
+  </p>
+
+<script>
+const W = 480, H = 360;
+const cv = document.getElementById('pet');
+const ctx = cv.getContext('2d');
+function resize() {
+  const d = window.devicePixelRatio || 1;
+  cv.width = W * d; cv.height = H * d;
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+}
+resize();
+addEventListener('resize', resize);
+
+// ---------- 펫 (그림 한 장에 2×2 프레임) ----------
+// 프레임 번호: 0 두 손 듦 · 1 왼손 침 · 2 오른손 침 · 3 두 손 침
+const PETS = {
+  dog:      { name: '🐶 강아지',     src: 'images/dog.png',      tap: 'xylo',   click: 'bark',  word: '멍!' },
+  cat:      { name: '🐱 고양이',     src: 'images/cat.png',      tap: 'drum',   click: 'meow',  word: '야옹~' },
+  crewmate: { name: '🔴 빨간 우주인', src: 'images/crewmate.png', tap: 'button', click: 'alarm', word: '비상!' }
+};
+for (const k in PETS) {
+  const img = new Image();
+  img.src = PETS[k].src;
+  PETS[k].img = img;
+}
+// ---------- 설정 (바꾸면 바로 저장) ----------
+const set = { pet: 'dog', size: 560, volume: 60, muted: false, on: true, sleep: true };
+try { Object.assign(set, JSON.parse(localStorage.getItem('pet-settings')) || {}); } catch (e) {}
+if (!PETS[set.pet]) set.pet = 'dog';
+function save() { try { localStorage.setItem('pet-settings', JSON.stringify(set)); } catch (e) {} }
+let petKey = set.pet;
+
+const $ = id => document.getElementById(id);
+const petsEl = $('pets'), panel = $('panel');
+for (const k in PETS) {
+  const b = document.createElement('button');
+  b.className = 'thumb';
+  b.title = PETS[k].name;
+  b.style.backgroundImage = `url(${PETS[k].src})`;
+  b.dataset.pet = k;
+  b.addEventListener('click', () => choosePet(k));
+  petsEl.appendChild(b);
+}
+function mark(box, attr, val) {
+  for (const b of box.children) b.classList.toggle('on', b.dataset[attr] === String(val));
+}
+function choosePet(k) {
+  petKey = set.pet = k; save();
+  mark(petsEl, 'pet', k);
+  audio();
+  wake(performance.now());
+  jump(W / 2, 120, false);
+}
+for (const b of $('sizes').children) b.addEventListener('click', () => {
+  set.size = Number(b.dataset.size); save(); applySettings();
+});
+for (const b of $('sleepSeg').children) b.addEventListener('click', () => {
+  set.sleep = b.dataset.sleep === '1'; save(); applySettings();
+});
+$('volume').addEventListener('input', e => {
+  set.volume = Number(e.target.value);
+  set.muted = set.volume === 0;
+  save(); applySettings();
+});
+$('mute').addEventListener('click', () => {
+  set.muted = !set.muted;
+  if (!set.muted && set.volume === 0) set.volume = 60;
+  save(); applySettings();
+});
+function togglePower() { set.on = !set.on; save(); applySettings(); }
+$('power').addEventListener('click', togglePower);
+$('powerOn').addEventListener('click', togglePower);
+function togglePanel() { panel.hidden = !panel.hidden; $('gear').classList.toggle('on', !panel.hidden); }
+$('gear').addEventListener('click', togglePanel);
+// 버튼을 누른 뒤 스페이스가 버튼을 다시 누르지 않게
+document.addEventListener('click', e => { if (e.target.closest('button')) e.target.closest('button').blur(); });
+
+function applySettings() {
+  mark(petsEl, 'pet', set.pet);
+  mark($('sizes'), 'size', set.size);
+  mark($('sleepSeg'), 'sleep', set.sleep ? 1 : 0);
+  $('wrap').style.width = set.size + 'px';
+  $('volume').value = set.muted ? 0 : set.volume;
+  $('volText').textContent = set.muted ? '꺼짐' : set.volume;
+  $('mute').textContent = set.muted ? '🔇' : '🔊';
+  if (master) master.gain.value = set.muted ? 0 : set.volume / 100;
+  $('power').textContent = set.on ? '⏻ 켜짐' : '⏻ 꺼짐';
+  $('power').classList.toggle('on', set.on);
+  cv.hidden = !set.on;
+  $('rest').hidden = set.on;
+  if (!set.on || !set.sleep) sleeping = false;
+  if (!set.on) setStatus('😴 꺼짐');
+  lastInput = performance.now();
+}
+
+// ---------- 프레임 애니메이션 ----------
+// 채널마다 [{바꿀 값..., d: 보여 줄 시간(ms)}] 목록을 차례로 넘긴다.
+const ch = { body: null, pawL: null, pawR: null };
+function play(name, frames) { ch[name] = { frames, i: 0, t: performance.now() }; }
+function stepFrames(now) {
+  for (const k in ch) {
+    const c = ch[k];
+    if (!c) continue;
+    while (now - c.t >= c.frames[c.i].d) {
+      c.t += c.frames[c.i].d;
+      c.i++;
+      if (c.i >= c.frames.length) { ch[k] = null; break; }
+    }
+  }
+}
+function cur(name) { const c = ch[name]; return c ? c.frames[c.i] : null; }
+
+// ---------- 상태 ----------
+let lastInput = performance.now(), sleeping = false;
+let combo = 0, lastTap = 0, nextZ = 0;
+let count = 0;
+try { count = Number(localStorage.getItem('pet-count')) || 0; } catch (e) {}
+const parts = [];
+const countEl = document.getElementById('count');
+const statusEl = document.getElementById('status');
+countEl.textContent = count;
+
+function addCount() {
+  count++;
+  countEl.textContent = count;
+  try { localStorage.setItem('pet-count', count); } catch (e) {}
+}
+function setStatus(t) { if (statusEl.textContent !== t) statusEl.textContent = t; }
+
+// ---------- 소리 (Web Audio 로 직접 만든 소리) ----------
+let ac = null, master = null, noise = null;
+function audio() {
+  if (!ac) {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain();
+    master.gain.value = set.muted ? 0 : set.volume / 100;
+    master.connect(ac.destination);
+    noise = ac.createBuffer(1, ac.sampleRate * 0.3, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state === 'suspended') ac.resume();
+}
+function env(g, t, peak, len) {
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+}
+function tone(type, f1, f2, peak, len, t = ac.currentTime, dest = master) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f1, t);
+  if (f2 !== f1) o.frequency.exponentialRampToValueAtTime(f2, t + len * 0.6);
+  env(g, t, peak, len);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + len + 0.02);
+}
+const sfx = {
+  // 실로폰: 맑은 소리 + 높은 배음
+  xylo(f) {
+    tone('sine', f, f, 0.32, 0.45);
+    tone('sine', f * 3.9, f * 3.9, 0.08, 0.08);
+  },
+  // 드럼: 둥 + 치익
+  drum(f) {
+    const t = ac.currentTime;
+    tone('sine', 120 + f * 0.08, 55, 0.5, 0.18);
+    const s = ac.createBufferSource(), hp = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = noise; hp.type = 'highpass'; hp.frequency.value = 1500 + f;
+    env(g, t, 0.25, 0.12);
+    s.connect(hp).connect(g).connect(master); s.start(t); s.stop(t + 0.15);
+  },
+  // 버튼: 딸깍 + 삑
+  button(f) {
+    tone('square', f, f, 0.12, 0.09);
+    tone('sine', 900, 300, 0.3, 0.03);
+  },
+  bark() {
+    const t = ac.currentTime, k = 0.9 + Math.random() * 0.2;
+    const f = ac.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 1.5;
+    f.connect(master);
+    tone('sawtooth', 420 * k, 190 * k, 0.5, 0.16, t, f);
+    tone('sawtooth', 460 * k, 200 * k, 0.4, 0.14, t + 0.2, f);
+  },
+  meow() {
+    const t = ac.currentTime, k = 0.9 + Math.random() * 0.25;
+    const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(430 * k, t);
+    o.frequency.linearRampToValueAtTime(720 * k, t + 0.12);
+    o.frequency.linearRampToValueAtTime(480 * k, t + 0.45);
+    f.type = 'bandpass'; f.Q.value = 3;
+    f.frequency.setValueAtTime(900, t);
+    f.frequency.linearRampToValueAtTime(1900, t + 0.15);
+    f.frequency.linearRampToValueAtTime(1000, t + 0.45);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + 0.55);
+  },
+  alarm() {
+    const t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'square';
+    for (let i = 0; i < 4; i++) o.frequency.setValueAtTime(i % 2 ? 660 : 880, t + i * 0.15);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+    g.gain.setValueAtTime(0.12, t + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+    o.connect(g).connect(master); o.start(t); o.stop(t + 0.62);
+  },
+  chirp() { tone('sine', 600, 1300, 0.25, 0.16); }
+};
+function playSfx(name, f) { if (!set.muted && ac) sfx[name](f); }
+
+// ---------- 키 → 손, 음, 글자 ----------
+const ROWS = ['ZXCVBNM', 'ASDFGHJKL', 'QWERTYUIOP', '1234567890'];
+function keyInfo(code) {
+  let c = null;
+  if (code.startsWith('Key')) c = code.slice(3);
+  else if (code.startsWith('Digit')) c = code.slice(5);
+  for (let r = 0; r < ROWS.length; r++) {
+    const col = c ? ROWS[r].indexOf(c) : -1;
+    if (col >= 0) return { side: col < 5 ? 'L' : 'R', note: col + r * 3, label: c };
+  }
+  if (code === 'Space') return { side: 'B', note: 5, label: '♪' };
+  const labels = { Enter: '↵', Backspace: '←', Tab: '⇥' };
+  return { side: null, note: 3 + Math.floor(Math.random() * 8), label: labels[code] || '♪' };
+}
+function pent(n) { // 도레미솔라 음계
+  const steps = [0, 2, 4, 7, 9];
+  const semi = 12 * Math.floor(n / 5) + steps[n % 5];
+  return 261.63 * Math.pow(2, semi / 12);
+}
+
+// ---------- 동작 ----------
+const SPR = { x: 75, y: 22, size: 330 };       // 그림을 그릴 자리
+const HIT = { L: [185, 255], R: [295, 255] };  // 손이 닿는 자리 (글자가 떠오르는 곳)
+let alt = 0;
+
+function wake(now) {
+  lastInput = now;
+  if (sleeping) {
+    sleeping = false;
+    playSfx('chirp');
+    spawn('!', 330, 60, { color: '#ff6b6b', size: 30, vy: -0.6 });
+  }
+}
+
+function tapPaw(side) {
+  const key = side === 'L' ? 'pawL' : 'pawR';
+  play(key, [{ [key]: true, d: 120 }]);
+}
+
+function onTap(info, now) {
+  combo = now - lastTap < 380 ? combo + 1 : 1;
+  lastTap = now;
+  let side = info.side;
+  if (!side) side = (alt++ % 2) ? 'R' : 'L';
+  if (side === 'B') { tapPaw('L'); tapPaw('R'); }
+  else tapPaw(side);
+  const px = side === 'B' ? W / 2 : HIT[side][0];
+  spawn(info.label, px + (Math.random() * 30 - 15), HIT.L[1] - 20, {
+    color: `hsl(${Math.floor(Math.random() * 360)},75%,55%)`, size: 26, vy: -1.6, vx: Math.random() - 0.5
+  });
+  playSfx(PETS[petKey].tap, pent(info.note));
+  play('body', [{ y: 3, sy: 0.98, d: 60 }]);
+  if (combo > 0 && combo % 10 === 0) { // 콤보 10번마다 신나서 한마디
+    playSfx(PETS[petKey].click);
+    for (let i = 0; i < 4; i++) spawn('♥', 240 + (Math.random() * 160 - 80), 90, { color: '#f59ab0', size: 24, vy: -1.4, vx: Math.random() * 2 - 1 });
+  }
+  addCount();
+}
+
+function jump(x, y, counted = true) {
+  play('body', [
+    { y: 8, sy: 0.92, d: 80 },
+    { y: -24, sy: 1.05, d: 80 },
+    { y: -36, d: 110 },
+    { y: -24, d: 80 },
+    { y: 6, sy: 0.94, d: 80 }
+  ]);
+  playSfx(PETS[petKey].click);
+  spawn(PETS[petKey].word, x, y - 10, { color: '#ff5d8f', size: 26, vy: -1 });
+  for (let i = 0; i < 3; i++) spawn('♥', x, y, { color: '#f59ab0', size: 22 + Math.random() * 10, vy: -1.2 - Math.random(), vx: Math.random() * 2 - 1 });
+  if (counted) addCount();
+}
+
+addEventListener('keydown', e => {
+  if (e.code === 'Escape') { togglePanel(); return; }
+  if (e.repeat || !set.on) return;
+  if (e.target.tagName === 'INPUT') return; // 소리 막대를 방향키로 움직일 때는 연주 안 함
+  if (e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'Tab') e.preventDefault();
+  audio();
+  const now = performance.now();
+  wake(now);
+  onTap(keyInfo(e.code), now);
+});
+
+cv.addEventListener('pointerdown', e => {
+  audio();
+  const now = performance.now();
+  wake(now);
+  const r = cv.getBoundingClientRect();
+  jump((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height);
+});
+
+// ---------- 떠오르는 글자 ----------
+function spawn(text, x, y, o = {}) {
+  parts.push({ text, x, y, vx: o.vx || 0, vy: o.vy || -1, color: o.color || '#5b3a2a', size: o.size || 24, life: 0, max: o.max || 900 });
+}
+
+// ---------- 그리기 ----------
+function drawBackground(now, party) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  if (party) { g.addColorStop(0, '#fff3b0'); g.addColorStop(1, '#ffd6e7'); }
+  else if (sleeping) { g.addColorStop(0, '#3d3a6b'); g.addColorStop(1, '#7c6fa8'); }
+  else { g.addColorStop(0, '#e8f4ff'); g.addColorStop(1, '#fbe7f3'); }
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 바닥
+  ctx.fillStyle = sleeping ? 'rgba(255,255,255,.08)' : 'rgba(120,80,160,.08)';
+  ctx.beginPath(); ctx.ellipse(W / 2, 338, 190, 22, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.textAlign = 'center';
+  if (party) { // 반짝이: 150ms 마다 자리가 바뀌는 프레임
+    const f = Math.floor(now / 150);
+    ctx.font = '20px system-ui';
+    for (let i = 0; i < 10; i++) {
+      ctx.fillStyle = `hsl(${(i * 47 + f * 30) % 360},80%,60%)`;
+      ctx.fillText('✦', (i * 97 + f * 53) % W, 20 + (i * 61 + f * 29) % 300);
+    }
+  }
+  if (sleeping) {
+    ctx.fillStyle = '#fff8c4';
+    ctx.font = '16px system-ui';
+    for (const [x, y] of [[40, 40], [100, 110], [420, 50], [450, 150], [60, 220]]) ctx.fillText('★', x, y);
+  }
+}
+
+function drawPet(p) {
+  const img = PETS[petKey].img;
+  if (!img.complete || !img.naturalWidth) return;
+  const cell = img.naturalWidth / 2;
+  const frame = p.pawL && p.pawR ? 3 : p.pawL ? 1 : p.pawR ? 2 : 0;
+  const sx = (frame % 2) * cell, sy = Math.floor(frame / 2) * cell;
+  const bottom = SPR.y + SPR.size;
+  ctx.save();
+  ctx.translate(W / 2, bottom + p.y);
+  ctx.scale(2 - p.sy, p.sy);
+  ctx.drawImage(img, sx, sy, cell, cell, -SPR.size / 2, -SPR.size, SPR.size, SPR.size);
+  ctx.restore();
+}
+
+// ---------- 매 프레임 ----------
+let prev = performance.now();
+function loop() {
+  const now = performance.now();
+  const dt = Math.min(50, now - prev); prev = now;
+  if (!set.on) { prev = now; requestAnimationFrame(loop); return; } // 꺼져 있으면 쉬기
+  stepFrames(now);
+
+  if (set.sleep && !sleeping && now - lastInput > 10000) { sleeping = true; nextZ = now; }
+  if (sleeping && now > nextZ) {
+    spawn('z', 340, 70, { color: '#e8e2ff', size: 20 + Math.random() * 10, vy: -0.6, vx: 0.4, max: 2000 });
+    nextZ = now + 900;
+  }
+
+  const comboOn = combo >= 5 && now - lastTap < 800;
+  const party = combo >= 10 && now - lastTap < 800;
+  setStatus(sleeping ? '💤 쿨쿨 자는 중' : party ? '🎉 신났어!' : '깨어 있음');
+
+  // 이번 프레임의 자세
+  const p = { pawL: false, pawR: false, y: 0, sy: 1 };
+  if (sleeping) {
+    p.pawL = p.pawR = true;                        // 두 손 내려놓고 눈 감은 그림
+    p.sy = Math.floor(now / 800) % 2 ? 0.98 : 1;   // 숨쉬기 2프레임
+  } else {
+    p.y = Math.floor(now / 500) % 2 ? 1 : 0;
+  }
+  Object.assign(p, cur('body'), cur('pawL'), cur('pawR'));
+
+  ctx.clearRect(0, 0, W, H);
+  drawBackground(now, party);
+  drawPet(p);
+
+  // 떠오르는 글자
+  ctx.textAlign = 'center';
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const q = parts[i];
+    q.life += dt; q.x += q.vx * dt / 16; q.y += q.vy * dt / 16;
+    if (q.life > q.max) { parts.splice(i, 1); continue; }
+    ctx.globalAlpha = 1 - q.life / q.max;
+    ctx.font = `bold ${q.size}px system-ui`;
+    ctx.lineWidth = 4; ctx.strokeStyle = '#fff';
+    ctx.strokeText(q.text, q.x, q.y);
+    ctx.fillStyle = q.color;
+    ctx.fillText(q.text, q.x, q.y);
+  }
+  ctx.globalAlpha = 1;
+
+  if (comboOn) {
+    ctx.font = `bold ${Math.min(40, 22 + combo)}px system-ui`;
+    ctx.fillStyle = '#ff5d8f'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 5;
+    ctx.strokeText(`콤보 ${combo}!`, W / 2, 40);
+    ctx.fillText(`콤보 ${combo}!`, W / 2, 40);
+  }
+  requestAnimationFrame(loop);
+}
+applySettings();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
