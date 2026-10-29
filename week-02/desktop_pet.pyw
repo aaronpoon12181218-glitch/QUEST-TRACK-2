@@ -41,7 +41,6 @@ PETS = {
     'dog':      dict(name='🐶 강아지',     file='dog.png',      tap='xylo',   voice='bark',  word='멍!'),
     # 고양이 그림은 오른손 칸도 왼손으로 치고 있어서, 왼손 그림을 좌우로 뒤집어 오른손으로 쓴다
     'cat':      dict(name='🐱 고양이',     file='cat.png',      tap='drum',   voice='meow',  word='야옹~', mirror_right=True),
-    'crewmate': dict(name='🔴 빨간 우주인', file='crewmate.png', tap='button', voice='alarm', word='비상!'),
 }
 SIZES = {'작게': 4, '보통': 3, '크게': 2}            # 그림을 몇 분의 1로 줄일지
 VOLUMES = {'크게': 1.0, '보통': 0.55, '작게': 0.25, '끄기': 0}

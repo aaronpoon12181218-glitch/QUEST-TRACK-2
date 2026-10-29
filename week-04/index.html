@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>야간 감정사</title>
+<style>
+  :root{--bg:#0c0a0e;--panel:#18141c;--gold:#b8902f;--text:#e8e2d6;--dim:#8a8090;--red:#c0392b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;min-height:100vh;overflow-x:hidden}
+  header{display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--panel);border-bottom:1px solid #2a2330}
+  header .title{font-weight:bold;letter-spacing:2px}
+  header .stats{display:flex;gap:18px;font-size:15px}
+  #time.low{color:#ff4040;animation:pulse .5s infinite alternate}
+  #trust{color:#c0392b;letter-spacing:2px}
+  main{max-width:1100px;margin:0 auto;padding:16px}
+  .board{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media (max-width:700px){.board{grid-template-columns:1fr}}
+  figure{margin:0}
+  .frame{position:relative;padding:12px;background:linear-gradient(135deg,#d4ac4f,#7a5a1a 50%,#c99b3b);box-shadow:0 0 30px #000 inset,0 6px 20px #000}
+  canvas{display:block;width:100%;aspect-ratio:4/3;background:#000;cursor:crosshair}
+  figcaption{text-align:center;color:var(--dim);font-size:14px;margin-top:8px}
+  .bar{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center;margin-top:18px}
+  button{font:inherit;padding:10px 20px;border:1px solid var(--gold);background:#231c26;color:var(--text);cursor:pointer;border-radius:4px}
+  button:hover{background:#3a2d3f}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  .hint{color:var(--dim);font-size:14px;text-align:center;margin-top:10px}
+  .stamp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-15deg) scale(2);opacity:0;padding:8px 22px;border:5px solid;font-size:34px;font-weight:bold;letter-spacing:6px;pointer-events:none;transition:all .25s cubic-bezier(.3,1.6,.6,1)}
+  .stamp.on{opacity:.9;transform:translate(-50%,-50%) rotate(-15deg) scale(1)}
+  .miss{position:absolute;color:#ff5050;font-weight:bold;font-size:22px;pointer-events:none;transform:translate(-50%,-50%);animation:fade .6s forwards}
+  #screen{position:fixed;inset:0;background:rgba(5,3,7,.96);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+  #screen .card{max-width:560px;text-align:center;line-height:1.8}
+  #screen h1{font-size:44px;letter-spacing:8px;margin:0 0 6px;color:#d8c9a8;text-shadow:0 0 18px #7a1010}
+  #screen .note{background:#e9e0cc;color:#2a2018;padding:18px 22px;text-align:left;font-family:'Batang',serif;margin:18px 0;box-shadow:0 4px 20px #000;transform:rotate(-1deg);white-space:pre-line}
+  #screen .lines p{opacity:0;animation:appear 1.2s forwards}
+  .glitch{animation:glitch .25s infinite}
+  #flash{position:fixed;inset:0;background:#a00;opacity:0;pointer-events:none;z-index:5;transition:opacity .4s}
+  #dark{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:6}
+  #whisper{position:fixed;left:50%;bottom:12%;transform:translateX(-50%);font-size:22px;color:#c33;opacity:0;pointer-events:none;z-index:7;letter-spacing:4px;transition:opacity 1s;text-align:center;width:90%}
+  .shake{animation:shake .4s}
+  @keyframes shake{20%{transform:translate(-8px,4px)}40%{transform:translate(7px,-5px)}60%{transform:translate(-5px,-3px)}80%{transform:translate(4px,5px)}}
+  @keyframes pulse{to{opacity:.4}}
+  @keyframes fade{to{opacity:0;transform:translate(-50%,-90%)}}
+  @keyframes appear{to{opacity:1}}
+  @keyframes glitch{0%{transform:translate(0)}33%{transform:translate(-2px,1px);color:#c33}66%{transform:translate(2px,-1px)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="title">야간 감정사</div>
+  <div class="stats">
+    <span id="where">밤 1 · 그림 1/3</span>
+    <span>⏱ <b id="time">60</b>초</span>
+    <span>찾음 <b id="found">0</b></span>
+    <span>신뢰도 <b id="trust">♥♥♥</b></span>
+  </div>
+</header>
+<main>
+  <div class="board" id="board">
+    <figure><div class="frame"><canvas id="L" width="800" height="600"></canvas></div><figcaption>원본 기록 사진</figcaption></figure>
+    <figure><div class="frame" id="rframe"><canvas id="R" width="800" height="600"></canvas><div class="stamp" id="stamp"></div></div><figcaption id="rcap">감정 대상</figcaption></figure>
+  </div>
+  <div class="bar"><button id="genuine">진품 도장 (다른 곳 없음)</button></div>
+  <div class="hint">두 그림에서 다른 곳을 클릭하세요. 다른 곳을 모두 찾으면 위조품 도장이 찍힙니다. 엉뚱한 곳을 누르면 3초가 줄어요.</div>
+</main>
+<div id="flash"></div><div id="dark"></div><div id="whisper"></div>
+<div id="screen"></div>
+
+<script>
+const W=400,H=300,TAU=Math.PI*2;
+
+// ---------- 그리기 도우미 ----------
+function C(c,x,y,r,f){c.fillStyle=f;c.beginPath();c.arc(x,y,r,0,TAU);c.fill()}
+function R(c,x,y,w,h,f){c.fillStyle=f;c.fillRect(x,y,w,h)}
+function E(c,x,y,rx,ry,f,rot=0){c.fillStyle=f;c.beginPath();c.ellipse(x,y,rx,ry,rot,0,TAU);c.fill()}
+function P(c,pts,f){c.fillStyle=f;c.beginPath();c.moveTo(pts[0],pts[1]);for(let i=2;i<pts.length;i+=2)c.lineTo(pts[i],pts[i+1]);c.closePath();c.fill()}
+function L(c,x1,y1,x2,y2,s,w=2){c.strokeStyle=s;c.lineWidth=w;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()}
+function drips(c,x,y,w,n,len,col){
+  for(let i=0;i<n;i++){const px=x+w*(i+.5)/n,l=len*(.45+((i*37)%10)/18);R(c,px-1.5,y,3,l,col);C(c,px,y+l,2.6,col)}
+}
+function ghostFace(c,x,y,s,open=false){
+  E(c,x,y,10*s,13*s,'#e4e9ec');
+  E(c,x-4*s,y-3*s,2.5*s,3.5*s,'#000');E(c,x+4*s,y-3*s,2.5*s,3.5*s,'#000');
+  E(c,x,y+6*s,(open?3.5:2)*s,(open?5:3)*s,'#000');
+}
+function glowEyes(c,x,y,gap,r,col){
+  c.save();c.shadowBlur=12;c.shadowColor=col;C(c,x-gap/2,y,r,col);C(c,x+gap/2,y,r,col);c.restore();
+}
+function hand(c,x,y,s,col,rot=0){
+  c.save();c.translate(x,y);c.rotate(rot);
+  E(c,0,0,6*s,7*s,col);
+  for(let i=0;i<4;i++)E(c,(-4.5+i*3)*s,-10*s+Math.abs(i-1.5)*1.5*s,1.4*s,5.5*s,col);
+  E(c,7*s,-2*s,1.6*s,4*s,col,.7);
+  R(c,-4*s,4*s,8*s,14*s,col);
+  c.restore();
+}
+function shadowFigure(c,x,y,h,col='#0a0a0a'){
+  P(c,[x-10,y,x+10,y,x+7,y-h*.75,x-7,y-h*.75],col);
+  E(c,x,y-h*.84,8,11,col);
+  L(c,x-7,y-h*.72,x-14,y-h*.2,col,3);L(c,x+7,y-h*.72,x+14,y-h*.2,col,3);
+  C(c,x-3,y-h*.86,1.3,'#fff');C(c,x+3,y-h*.86,1.3,'#fff');
+}
+function cloud(c,x,y,s){C(c,x,y,18*s,'#fff');C(c,x+20*s,y-8*s,22*s,'#fff');C(c,x+42*s,y,17*s,'#fff');E(c,x+20*s,y+6*s,38*s,12*s,'#fff')}
+
+// ---------- 그림들 ----------
+const SCENES={
+  field:{name:'들판의 오후',
+    diffs:[{id:'sun',x:320,y:60,r:36},{id:'cloud',x:218,y:36,r:32},{id:'window',x:254,y:217,r:18},{id:'apple',x:82,y:128,r:14},{id:'chimney',x:295,y:172,r:18}],
+    horror:[{id:'bloodSun',x:320,y:72,r:38},{id:'ghostWindow',x:254,y:217,r:18},{id:'figure',x:165,y:210,r:28},{id:'eyesTree',x:80,y:152,r:26}],
+    draw(c,on){
+      const g=c.createLinearGradient(0,0,0,190);g.addColorStop(0,'#7fb3d5');g.addColorStop(1,'#e3f0f7');c.fillStyle=g;c.fillRect(0,0,W,H);
+      if(on.has('bloodSun')){C(c,320,60,28,'#7a0000');drips(c,302,70,36,5,42,'#7a0000')}
+      else if(on.has('sun'))C(c,320,60,36,'#f0883e');else C(c,320,60,28,'#f7dc6f');
+      cloud(c,70,58,1);if(!on.has('cloud'))cloud(c,198,38,.8);
+      P(c,[0,190,70,110,150,190],'#7d8f69');P(c,[100,190,200,95,300,190],'#6b7b58');P(c,[240,190,330,125,400,170,400,190],'#7d8f69');
+      R(c,0,185,W,115,'#8fbf5a');R(c,0,255,W,45,'#7aa84a');
+      R(c,72,170,16,75,'#6e4b2a');C(c,80,150,42,'#3f7d3a');C(c,56,168,25,'#3f7d3a');C(c,104,168,25,'#3f7d3a');
+      C(c,62,148,5,'#d63a3a');C(c,100,172,5,'#d63a3a');if(!on.has('apple'))C(c,82,128,5,'#d63a3a');
+      if(on.has('eyesTree'))glowEyes(c,80,155,16,4,'#ff1a1a');
+      if(!on.has('chimney'))R(c,288,160,14,30,'#7b4a3a');
+      R(c,230,195,80,55,'#e8d8b8');P(c,[222,197,270,160,318,197],'#a0432f');
+      if(on.has('ghostWindow')){R(c,243,208,22,18,'#05070a');ghostFace(c,254,218,.65)}
+      else if(!on.has('window')){R(c,243,208,22,18,'#5d7fa3');L(c,254,208,254,226,'#fff',1.5);L(c,243,217,265,217,'#fff',1.5)}
+      R(c,282,218,18,32,'#6e4b2a');
+      for(const [x,y,f] of [[30,270,'#f4d03f'],[130,282,'#ec7063'],[200,265,'#f4d03f'],[340,280,'#af7ac5'],[370,262,'#ec7063'],[250,288,'#fff']])C(c,x,y,4,f);
+      if(on.has('figure'))shadowFigure(c,165,248,80);
+    }},
+  still:{name:'꽃병과 과일',
+    diffs:[{id:'flowerColor',x:130,y:88,r:16},{id:'grape',x:272,y:172,r:16},{id:'candleFlame',x:340,y:138,r:14},{id:'vaseStripe',x:130,y:182,r:26},{id:'pear',x:290,y:186,r:16}],
+    horror:[{id:'handTable',x:200,y:214,r:22},{id:'bloodCandle',x:340,y:182,r:28},{id:'eyeFrame',x:300,y:67,r:30},{id:'skullBowl',x:244,y:188,r:18}],
+    draw(c,on){
+      R(c,0,0,W,H,'#5a4636');for(let x=0;x<W;x+=40)R(c,x,0,18,210,'#5f4a3a');
+      R(c,265,40,70,55,'#b8902f');
+      if(on.has('eyeFrame')){R(c,272,47,56,41,'#0a0505');E(c,300,67,20,11,'#e8e0d0');C(c,300,67,9,'#8b0000');C(c,300,67,4,'#000')}
+      else{R(c,272,47,56,41,'#a9cce3');P(c,[272,88,295,62,315,88],'#6b8e5a');C(c,318,57,5,'#f7dc6f')}
+      R(c,0,205,W,95,'#7a4b2b');R(c,0,200,W,10,'#94603a');
+      if(on.has('handTable')){for(let i=0;i<4;i++){E(c,189+i*7,212,3,9,'#d0d6d9');E(c,189+i*7,205,2.2,2.5,'#9aa3a8')}}
+      L(c,130,145,110,100,'#3f7d3a',2);L(c,130,145,130,88,'#3f7d3a',2);L(c,130,145,152,102,'#3f7d3a',2);
+      C(c,110,100,12,'#e74c3c');C(c,130,88,12,on.has('flowerColor')?'#8e44ad':'#f1c40f');C(c,152,102,12,'#ecf0f1');
+      C(c,110,100,4,'#7d3c00');C(c,130,88,4,'#7d3c00');C(c,152,102,4,'#7d3c00');
+      E(c,130,182,28,30,'#3e6fa8');R(c,121,140,18,18,'#3e6fa8');E(c,130,140,12,4,'#2c5282');
+      if(on.has('vaseStripe'))E(c,130,182,27,4,'#f1c40f');
+      c.fillStyle='#d5dbdb';c.beginPath();c.ellipse(265,200,52,24,0,0,Math.PI);c.fill();
+      if(!on.has('grape'))for(const [x,y] of [[266,168],[274,168],[270,175],[262,175],[278,175],[266,182],[274,182]])C(c,x,y,4.5,'#6c3483');
+      if(on.has('skullBowl')){C(c,244,186,15,'#ecebe4');E(c,238,186,4,5,'#111');E(c,250,186,4,5,'#111');R(c,238,197,13,6,'#ecebe4');L(c,242,197,242,203,'#555',1);L(c,247,197,247,203,'#555',1)}
+      else C(c,244,188,16,'#e67e22');
+      if(!on.has('pear'))E(c,290,186,12,16,'#c5d86d');
+      E(c,265,200,52,6,'#bfc9ca');
+      const cc=on.has('bloodCandle')?'#6b0000':'#f5eedc';R(c,333,150,14,55,cc);
+      if(on.has('bloodCandle')){drips(c,333,150,14,3,30,'#8b0000');E(c,345,208,20,4,'#6b0000')}
+      if(!on.has('candleFlame')){E(c,340,140,5,10,'#ffb347');E(c,340,143,2,5,'#fff6c8')}
+    }},
+  portrait:{name:'초록 옷의 부인',
+    diffs:[{id:'earring',x:155,y:148,r:12},{id:'necklace',x:200,y:212,r:24},{id:'mole',x:218,y:150,r:11},{id:'bow',x:242,y:78,r:18},{id:'button',x:200,y:258,r:12}],
+    horror:[{id:'blackEyes',x:200,y:125,r:28},{id:'smile',x:200,y:162,r:24},{id:'bloodTears',x:200,y:146,r:22},{id:'shadowBehind',x:305,y:110,r:32}],
+    draw(c,on){
+      const g=c.createRadialGradient(200,130,30,200,150,260);g.addColorStop(0,'#3c5e4a');g.addColorStop(1,'#14231a');c.fillStyle=g;c.fillRect(0,0,W,H);
+      if(on.has('shadowBehind')){c.globalAlpha=.75;ghostFace(c,305,110,2.2);c.globalAlpha=1}
+      E(c,200,135,72,90,'#3b2416');
+      R(c,186,168,28,40,'#e8c4a0');
+      E(c,200,290,115,80,'#6c2a3c');P(c,[170,215,230,215,200,250],'#e8c4a0');
+      if(!on.has('button'))C(c,200,258,4,'#f1c40f');
+      for(let i=-4;i<=4;i++)C(c,200+i*7,210+Math.abs(i)*-1.5+6,3,on.has('necklace')?'#c0392b':'#ecf0f1');
+      E(c,200,130,45,58,'#f0cfae');
+      E(c,180,82,35,22,'#3b2416',-.4);E(c,222,82,35,22,'#3b2416',.4);
+      P(c,[232,72,252,62,250,88],on.has('bow')?'#2471a3':'#c0392b');P(c,[232,72,214,64,218,86],on.has('bow')?'#2471a3':'#c0392b');
+      L(c,172,112,190,110,'#3b2416',2.5);L(c,210,110,228,112,'#3b2416',2.5);
+      if(on.has('blackEyes')){E(c,182,125,9,6,'#000');E(c,218,125,9,6,'#000');C(c,182,125,2,'#ff2020');C(c,218,125,2,'#ff2020')}
+      else{E(c,182,125,9,5,'#fff');E(c,218,125,9,5,'#fff');C(c,182,125,4,'#3b2416');C(c,218,125,4,'#3b2416')}
+      if(on.has('bloodTears')){drips(c,178,130,8,2,34,'#8b0000');drips(c,214,130,8,2,30,'#8b0000')}
+      L(c,200,128,196,146,'#c9a07e',2);
+      if(on.has('smile')){c.fillStyle='#3a0000';c.beginPath();c.moveTo(166,152);c.quadraticCurveTo(200,190,234,152);c.quadraticCurveTo(200,168,166,152);c.fill();
+        for(let x=176;x<=224;x+=6)L(c,x,157+(Math.abs(x-200)<20?4:0),x,162+(Math.abs(x-200)<20?3:0),'#eee',1.5)}
+      else E(c,200,160,10,3,'#b5525a');
+      if(on.has('mole'))C(c,218,150,2,'#4a2c1a');
+      if(!on.has('earring'))C(c,155,148,5,'#f1c40f');
+    }},
+  sea:{name:'달밤의 바다',
+    diffs:[{id:'moonPhase',x:80,y:60,r:28},{id:'star',x:250,y:40,r:12},{id:'lighthouseLight',x:345,y:96,r:18},{id:'sail',x:220,y:178,r:22},{id:'fish',x:300,y:196,r:14}],
+    horror:[{id:'redMoon',x:80,y:60,r:28},{id:'body',x:112,y:254,r:32},{id:'handsWater',x:298,y:244,r:28},{id:'boatFigure',x:184,y:190,r:18}],
+    draw(c,on){
+      const g=c.createLinearGradient(0,0,0,180);g.addColorStop(0,'#0d1b2a');g.addColorStop(1,'#2b3a55');c.fillStyle=g;c.fillRect(0,0,W,H);
+      for(const [x,y] of [[30,20],[150,30],[190,70],[290,25],[370,40],[120,110],[230,100]])C(c,x,y,1.5,'#fff');
+      if(!on.has('star')){C(c,250,40,3,'#fff');L(c,244,40,256,40,'#fff',1);L(c,250,34,250,46,'#fff',1)}
+      if(on.has('redMoon')){c.save();c.shadowBlur=25;c.shadowColor='#f00';C(c,80,60,25,'#9b111e');c.restore()}
+      else{C(c,80,60,25,'#f4f1de');if(on.has('moonPhase'))C(c,92,54,23,'#16243a')}
+      R(c,0,180,W,120,'#14324a');
+      for(let y=195;y<300;y+=14)for(let x=(y*7)%40;x<W;x+=40)L(c,x,y,x+16,y,'#2a5677',1.5);
+      R(c,72,185,16,90,on.has('redMoon')?'rgba(160,20,30,.35)':'rgba(244,241,222,.25)');
+      P(c,[300,180,330,165,400,160,400,182],'#1c1c1c');
+      R(c,335,110,20,58,'#ecf0f1');R(c,335,125,20,8,'#c0392b');R(c,335,145,20,8,'#c0392b');R(c,331,102,28,10,'#333');
+      if(!on.has('lighthouseLight')){C(c,345,96,7,'#fff3b0');c.globalAlpha=.25;P(c,[345,96,230,70,230,120],'#fff3b0');c.globalAlpha=1}
+      else C(c,345,96,7,'#333');
+      L(c,201,205,201,148,'#3e2723',2.5);
+      P(c,[203,150,203,200,240,200],on.has('sail')?'#e67e22':'#ecf0f1');
+      if(on.has('boatFigure')){P(c,[174,206,194,206,184,174],'#050505');C(c,184,180,7,'#050505');C(c,181,181,1.3,'#f22');C(c,187,181,1.3,'#f22')}
+      P(c,[160,205,242,205,228,222,172,222],'#5d4037');
+      if(!on.has('fish')){E(c,300,192,9,4,'#9fb3c8',-.5);P(c,[292,197,286,192,288,202],'#9fb3c8');C(c,306,189,1,'#000')}
+      if(on.has('body')){E(c,118,256,30,7,'#aeb9bd');E(c,84,254,8,7,'#9aa6aa');E(c,78,252,11,6,'#111');E(c,104,264,13,3,'#aeb9bd',.3);E(c,104,247,13,3,'#aeb9bd',-.3);L(c,90,262,140,262,'#2a5677',2)}
+      if(on.has('handsWater')){for(const [x,y,s,r] of [[278,250,1,-.25],[300,240,1.3,.05],[322,254,.9,.35]])hand(c,x,y,s,'#c9d3d8',r)}
+    }},
+  hall:{name:'자정의 복도',
+    diffs:[{id:'lamp',x:200,y:34,r:16},{id:'bench',x:200,y:240,r:26},{id:'frameColor',x:335,y:115,r:28},{id:'doorKnob',x:212,y:155,r:10}],
+    horror:[{id:'girl',x:200,y:172,r:18},{id:'doorOpen',x:200,y:148,r:20},{id:'bloodFloor',x:200,y:262,r:30},{id:'hangingFrame',x:65,y:116,r:30}],
+    draw(c,on){
+      R(c,0,0,W,H,'#3a2e48');
+      P(c,[0,0,400,0,260,80,140,80],'#221c2b');
+      P(c,[0,300,400,300,260,190,140,190],'#4a3a2c');
+      P(c,[0,0,140,80,140,190,0,300],'#4a3b5c');
+      P(c,[400,0,260,80,260,190,400,300],'#43354f');
+      P(c,[150,300,250,300,215,190,185,190],'#7b241c');
+      if(on.has('bloodFloor'))for(const [x,y,s] of [[188,285,1.3],[210,265,1.15],[192,246,1],[207,230,.9],[195,215,.8],[205,202,.7]]){E(c,x,y,4*s,7*s,'#3d0000');C(c,x,y-9*s,2.5*s,'#3d0000')}
+      if(on.has('doorOpen')){R(c,182,115,36,75,'#000');glowEyes(c,200,140,9,2.2,'#fff')}
+      else{R(c,182,115,36,75,'#2a1d14');R(c,186,120,28,30,'#33241a');R(c,186,155,28,30,'#33241a');if(!on.has('doorKnob'))C(c,212,155,2.5,'#d4ac0d')}
+      if(on.has('girl')){E(c,200,190,10,2,'rgba(0,0,0,.5)');P(c,[190,190,210,190,200,166],'#050505');C(c,200,160,6,'#050505');P(c,[194,160,206,160,208,178,192,178],'#050505')}
+      L(c,200,0,200,24,'#555',2);P(c,[190,24,210,24,216,34,184,34],'#333');
+      if(on.has('lamp'))C(c,200,37,5,'#444');
+      else{c.save();c.shadowBlur=20;c.shadowColor='#fff6c8';C(c,200,37,5,'#fff6c8');c.restore();c.globalAlpha=.08;P(c,[184,34,216,34,280,190,120,190],'#fff6c8');c.globalAlpha=1}
+      P(c,[30,60,100,85,100,155,30,170],'#b8902f');
+      if(on.has('hangingFrame')){P(c,[38,72,92,92,92,148,38,160],'#d8d8d8');ghostFace(c,65,116,1.5,true);drips(c,48,150,34,4,22,'#7a0000')}
+      else{P(c,[38,72,92,92,92,148,38,160],'#5d7fa3');P(c,[38,140,65,105,92,135,92,148,38,160],'#4a6b4a')}
+      P(c,[370,60,300,85,300,155,370,170],'#b8902f');P(c,[362,72,308,92,308,148,362,160],on.has('frameColor')?'#2e8b57':'#a3826b');
+      if(!on.has('bench')){R(c,165,232,70,8,'#6e4b2a');R(c,170,240,5,14,'#4e3420');R(c,225,240,5,14,'#4e3420')}
+    }},
+  self:{name:'감정실 (작가 미상, 2026)',
+    diffs:[],
+    horror:[{id:'behind',x:60,y:150,r:38},{id:'shoulderHand',x:246,y:258,r:22},{id:'doorOpen2',x:317,y:90,r:28},{id:'paintingFace',x:264,y:158,r:22},{id:'wallText',x:150,y:60,r:34}],
+    draw(c,on){
+      R(c,0,0,W,H,'#1d1720');
+      R(c,290,20,55,140,'#2a1f1a');
+      if(on.has('doorOpen2')){R(c,294,24,47,136,'#000');ghostFace(c,317,80,1.3)}else C(c,336,95,2.5,'#b8902f');
+      if(on.has('wallText')){c.fillStyle='#7a0000';c.font='bold 26px serif';c.fillText('돌아보지 마',85,68);drips(c,90,70,120,6,20,'#7a0000')}
+      const g=c.createRadialGradient(90,150,5,90,150,150);g.addColorStop(0,'rgba(255,230,160,.35)');g.addColorStop(1,'rgba(255,230,160,0)');c.fillStyle=g;c.fillRect(0,0,W,H);
+      R(c,0,182,W,118,'#3a281b');R(c,0,176,W,10,'#5a3d28');
+      L(c,90,176,90,150,'#888',3);P(c,[76,150,104,150,96,132,84,132],'#6b5a3a');
+      R(c,110,136,52,42,'#b8902f');R(c,115,141,42,32,'#7fb3d5');P(c,[115,173,135,152,157,173],'#6b7b58');
+      R(c,238,136,52,42,'#b8902f');
+      if(on.has('paintingFace')){R(c,243,141,42,32,'#0a0a0a');ghostFace(c,264,157,.9,true)}
+      else{R(c,243,141,42,32,'#7fb3d5');P(c,[243,173,264,150,285,173],'#6b7b58')}
+      if(on.has('behind'))shadowFigure(c,60,300,250,'#030303');
+      E(c,200,300,82,62,'#2b2b40');R(c,184,222,32,20,'#1d1712');C(c,200,212,28,'#1d1712');
+      if(on.has('shoulderHand'))hand(c,246,262,1.5,'#d0d6d9',Math.PI*.95);
+    }},
+};
+
+// ---------- 밤마다 할 일 ----------
+// [그림, 보통 차이 수, 이상현상 수, 제한 시간]
+const NIGHTS=[
+  {note:'어서 와요, 새 알바생.\n우리 미술관은 밤에만 위조품을 감정해요.\n\n왼쪽은 원본 기록 사진, 오른쪽은 오늘 들어온 그림이에요.\n다른 곳을 전부 찾으면 위조품이고,\n다른 곳이 하나도 없으면 진품 도장을 찍으면 돼요.\n\n— 관장',
+   list:[['field',3,0,60],['still',3,0,60],['portrait',0,0,40]]},
+  {note:'어제 잘했어요.\n\n아, 그림 속에서 이상한 걸 봐도 너무 놀라지 마세요.\n오래된 그림은… 가끔 그래요.\n그것도 위조 흔적이니까 찾아서 표시하면 돼요.\n\n— 관장',
+   list:[['sea',3,0,55],['portrait',2,1,55],['hall',3,0,55]]},
+  {note:'전에 일하던 알바생은 사흘째 밤에 그만뒀어요.\n이유는 묻지 마세요.\n\n원본 사진이 잠깐 바뀌어 보여도 신경 쓰지 마세요.\n사진은 움직이지 않아요. 원래는.\n\n— 관장',
+   list:[['still',2,1,50],['field',1,2,50],['sea',2,1,50]]},
+  {note:'오늘은 제가 못 가요.\n혼자 문 잠그고 하세요.\n\n그리고 뒤는 돌아보지 마세요.\n누가 이름을 불러도요.\n\n— 관ㅈ',
+   list:[['hall',1,2,45],['portrait',1,3,45],['field',0,0,35]]},
+  {note:'마지막 밤이에요.\n오늘 들어온 그림 중에 하나는\n당신도 아는 그림일 거예요.\n\n수고했어요. 정말로.\n\n— ',
+   list:[['sea',1,3,45],['still',1,3,45],['self',0,5,50]]},
+];
+const WHISPERS=['뒤에','보고 있어','그림 속은 따뜻해','이름이 뭐야?','하나 더 있어','나가지 마','우리도 감정사였어','눈 감지 마'];
+const SCARE_LINES={bloodSun:'해에서… 무언가 흘러내린다.',ghostWindow:'창문에 얼굴이 있다.',figure:'저건 처음부터 거기 서 있었나?',eyesTree:'나무가 이쪽을 보고 있다.',
+  handTable:'탁자 밑에서 손가락이…',bloodCandle:'촛농이 붉다. 아니, 촛농이 아니다.',eyeFrame:'액자 속 눈이 깜빡였다.',skullBowl:'과일이 아니었다.',
+  blackEyes:'부인의 눈이 텅 비었다.',smile:'부인이 웃고 있다. 너무 크게.',bloodTears:'부인이 울고 있다.',shadowBehind:'부인 뒤에 누가 있다.',
+  redMoon:'달이 핏빛이다.',body:'물 위에 떠 있는 건… 사람이다.',handsWater:'물속에서 손들이 올라온다.',boatFigure:'배에 누군가 타고 있다.',
+  girl:'복도 끝에 아이가 서 있다.',doorOpen:'문이 열려 있다. 안에서 무언가 본다.',bloodFloor:'발자국이 이쪽으로 오고 있다.',hangingFrame:'그림 속 사람이 비명을 지른다.',
+  behind:'의자 옆에 키 큰 무언가가 서 있다.',shoulderHand:'어깨 위에 손이 올려져 있다.',doorOpen2:'감정실 문이 열려 있다.',paintingFace:'책상 위 그림이 나를 본다.',wallText:'벽에 글씨가 적혀 있다.'};
+
+// ---------- 소리 (코드로 만듦) ----------
+let AC,droneGain;
+function audio(){
+  if(AC)return;AC=new (window.AudioContext||window.webkitAudioContext)();
+  droneGain=AC.createGain();droneGain.gain.value=0;
+  const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=220;f.connect(droneGain);droneGain.connect(AC.destination);
+  for(const hz of [55,55.6,82.4]){const o=AC.createOscillator();o.type='sawtooth';o.frequency.value=hz;o.connect(f);o.start()}
+}
+function tone(freq,dur,type='sine',vol=.2,when=0,slide){
+  if(!AC)return;const t=AC.currentTime+when,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.setValueAtTime(freq,t);if(slide)o.frequency.exponentialRampToValueAtTime(slide,t+dur);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);o.connect(g);g.connect(AC.destination);o.start(t);o.stop(t+dur);
+}
+function noise(dur,vol,freq=1000){
+  if(!AC)return;const b=AC.createBuffer(1,AC.sampleRate*dur,AC.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);
+  const s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();f.type='bandpass';f.frequency.value=freq;g.gain.value=vol;
+  s.buffer=b;s.connect(f);f.connect(g);g.connect(AC.destination);s.start();
+}
+const SFX={
+  ding(){tone(880,.15,'triangle',.15);tone(1320,.25,'triangle',.1,.08)},
+  buzz(){tone(110,.25,'square',.08)},
+  stamp(){noise(.15,.8,300);tone(70,.2,'sine',.4)},
+  scare(){noise(.8,.6,2500);tone(73,1.4,'sawtooth',.2);tone(77.8,1.4,'sawtooth',.2);tone(1800,.9,'sawtooth',.05,0,600)},
+  heart(){tone(55,.15,'sine',.5);tone(50,.15,'sine',.4,.18)},
+};
+
+// ---------- 게임 ----------
+const $=id=>document.getElementById(id);
+const Lc=$('L'),Rc=$('R');
+let night=0,idx=0,trust=3,scene,active=[],found=[],timeLeft=0,timer=null,busy=true,leftExtra=null,seen=0,isFinal=false;
+
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
+function pick(s,nn,nh){
+  const res=[],ok=d=>res.every(e=>Math.hypot(e.x-d.x,e.y-d.y)>(e.r+d.r)*.8);
+  for(const d of shuffle(s.horror))if(res.filter(e=>e.h).length<nh&&ok(d))res.push({...d,h:true});
+  for(const d of shuffle(s.diffs))if(res.filter(e=>!e.h).length<nn&&ok(d))res.push({...d});
+  return res;
+}
+function paint(cv,set,marks){
+  const c=cv.getContext('2d');c.setTransform(cv.width/W,0,0,cv.height/H,0,0);
+  scene.draw(c,set);
+  for(const d of marks){c.strokeStyle=d.miss?'rgba(255,255,255,.7)':d.h?'#ff2a2a':'#ffe066';c.lineWidth=3;c.setLineDash(d.miss?[5,5]:[]);c.beginPath();c.arc(d.x,d.y,d.r,0,TAU);c.stroke()}
+  c.setLineDash([]);
+}
+function draw(extra=[]){
+  paint(Lc,new Set(leftExtra?[leftExtra]:[]),[...found,...extra]);
+  paint(Rc,new Set(active.map(d=>d.id)),[...found,...extra]);
+}
+function hud(){
+  const n=NIGHTS[night];
+  $('where').textContent=`밤 ${night+1} · 그림 ${idx+1}/${n.list.length}`;
+  $('time').textContent=timeLeft;$('time').classList.toggle('low',timeLeft<=10);
+  $('found').textContent=found.length;
+  $('trust').textContent='♥'.repeat(trust)+'♡'.repeat(3-trust);
+}
+
+function showScreen(html){$('screen').innerHTML=html;$('screen').style.display='flex'}
+function hideScreen(){$('screen').style.display='none'}
+
+function title(){
+  busy=true;
+  showScreen(`<div class="card"><h1>야간 감정사</h1><p style="color:var(--dim)">어느 미스터리한 미술관의 위조품 감정 알바</p>
+  <p>두 그림을 비교해 다른 곳을 찾으세요.<br>밤이 깊어질수록… 그림이 조금씩 이상해집니다.</p>
+  <p style="color:var(--dim);font-size:14px">🔊 소리를 켜고 하면 더 무서워요</p><button id="go">출근하기</button></div>`);
+  $('go').onclick=()=>{audio();night=0;trust=3;seen=0;startNight()};
+}
+function startNight(){
+  busy=true;clearInterval(timer);
+  const n=NIGHTS[night];
+  showScreen(`<div class="card"><h2>${night+1}번째 밤</h2><div class="note ${night>=3?'glitch':''}">${n.note}</div><button id="go">근무 시작</button></div>`);
+  if(droneGain)droneGain.gain.setTargetAtTime(.015+night*.02,AC.currentTime,1);
+  $('go').onclick=()=>{hideScreen();idx=0;loadPainting()};
+}
+function loadPainting(){
+  const [key,nn,nh,t]=NIGHTS[night].list[idx];
+  scene=SCENES[key];isFinal=key==='self';
+  active=pick(scene,nn,nh);found=[];leftExtra=null;timeLeft=t;busy=false;
+  $('rcap').textContent='감정 대상 — '+scene.name;
+  $('genuine').disabled=isFinal;
+  $('stamp').className='stamp';
+  hud();draw();
+  clearInterval(timer);timer=setInterval(tick,1000);
+}
+function tick(){
+  if(busy)return;
+  timeLeft--;hud();
+  if(timeLeft<=10&&timeLeft>0)SFX.heart();
+  ambient();
+  if(timeLeft<=0)judge('timeout');
+}
+function ambient(){
+  const lv=night;
+  if(Math.random()<[0,.02,.05,.08,.12][lv])flicker();
+  if(lv>=2&&!leftExtra&&Math.random()<[0,0,.06,.09,.14][lv]){
+    leftExtra=shuffle(scene.horror)[0].id;draw();
+    setTimeout(()=>{leftExtra=null;if(!busy)draw()},lv>=4?400:220);
+  }
+  if(lv>=2&&Math.random()<[0,0,.04,.06,.1][lv])whisper(shuffle(WHISPERS)[0]);
+}
+function flicker(){
+  const d=$('dark');let k=0;
+  const f=()=>{d.style.opacity=k%2?0:.88;if(++k<4+Math.random()*4)setTimeout(f,50+Math.random()*90);else d.style.opacity=0};f();
+  noise(.2,.08,4000);
+}
+function whisper(t){const w=$('whisper');w.textContent=t;w.style.opacity=.85;setTimeout(()=>w.style.opacity=0,1600)}
+
+function scare(d){
+  seen++;SFX.scare();
+  const f=$('flash');f.style.transition='none';f.style.opacity=.55;
+  requestAnimationFrame(()=>{f.style.transition='opacity .8s';f.style.opacity=0});
+  const b=$('board');b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');
+  whisper(SCARE_LINES[d.id]||'…');
+}
+
+function onClick(e){
+  if(busy)return;
+  const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*W,y=(e.clientY-r.top)/r.height*H;
+  const d=active.find(d=>!found.includes(d)&&Math.hypot(d.x-x,d.y-y)<d.r+6);
+  if(d){
+    found.push(d);d.h?scare(d):SFX.ding();hud();draw();
+    if(found.length===active.length)judge('found');
+  }else{
+    SFX.buzz();timeLeft=Math.max(0,timeLeft-3);hud();
+    const m=document.createElement('div');m.className='miss';m.textContent='✕ -3';
+    m.style.left=(e.clientX-r.left+12)+'px';m.style.top=(e.clientY-r.top+12)+'px';
+    e.target.parentNode.appendChild(m);setTimeout(()=>m.remove(),600);
+    if(timeLeft<=0)judge('timeout');
+  }
+}
+Lc.onclick=Rc.onclick=onClick;
+$('genuine').onclick=()=>{if(!busy)judge('genuine')};
+
+function judge(kind){
+  busy=true;clearInterval(timer);
+  if(isFinal){setTimeout(()=>ending(kind==='found'),1400);return}
+  let ok,label,col;
+  if(kind==='found'){ok=true;label='위조품';col='#c0392b'}
+  else if(kind==='genuine'){ok=active.length===0;label='진품';col='#2e86c1'}
+  else{ok=false;label='시간 초과';col='#888'}
+  if(!ok){trust--;SFX.buzz();draw(active.filter(d=>!found.includes(d)).map(d=>({...d,miss:true})))}
+  const s=$('stamp');s.textContent=label;s.style.color=col;s.style.borderColor=col;
+  setTimeout(()=>{s.classList.add('on');SFX.stamp()},150);
+  if(!ok)setTimeout(()=>whisper(kind==='genuine'?'아직 다른 곳이 남아 있었어요':'점선 동그라미가 놓친 곳이에요'),400);
+  hud();
+  setTimeout(next,2300);
+}
+function next(){
+  if(trust<=0)return fired();
+  idx++;
+  if(idx<NIGHTS[night].list.length)return loadPainting();
+  night++;startNight();
+}
+function fired(){
+  showScreen(`<div class="card lines">
+    <p style="animation-delay:.2s">신뢰도가 바닥났다.</p>
+    <div class="note" style="opacity:0;animation:appear 1.2s 1.4s forwards">실수가 너무 많네요.\n\n괜찮아요. 우리 미술관에 해고는 없어요.\n대신 당신은 이제… 우리 소장품이에요.\n\n— 관장</div>
+    <p style="animation-delay:3s;color:var(--dim)">찾은 이상현상: ${seen}개</p>
+    <p style="animation-delay:3.4s"><button id="go">다시 출근하기</button></p></div>`);
+  SFX.scare();if(droneGain)droneGain.gain.setTargetAtTime(0,AC.currentTime,2);
+  $('go').onclick=()=>{trust=3;night=0;seen=0;startNight()};
+}
+function ending(all){
+  if(droneGain)droneGain.gain.setTargetAtTime(0,AC.currentTime,.5);
+  $('dark').style.opacity=1;SFX.scare();
+  setTimeout(()=>{
+    $('dark').style.opacity=0;
+    const lines=all?['마지막 그림을 감정했다.','감정실. 작가 미상. 2026년.','의자에 앉은 사람의 뒷모습이… 낯익다.','왼쪽 원본 기록 사진을 다시 봤다.','사진 속 의자는 <b style="color:#c33">비어 있었다.</b>','그림 속 감정사는 오늘 밤도 틀린 그림을 찾고 있다.']
+      :['시간이 다 됐다.','등 뒤에서 숨소리가 들린다.','관장은 돌아보지 말라고 했다.','하지만 누가 내 이름을 부른다.','…','나는 <b style="color:#c33">돌아보았다.</b>'];
+    showScreen(`<div class="card lines">${lines.map((t,i)=>`<p style="animation-delay:${.5+i*1.6}s">${t}</p>`).join('')}
+      <p style="animation-delay:${.5+lines.length*1.6}s;color:var(--dim)">— 끝 — &nbsp; 찾은 이상현상: ${seen}개</p>
+      <p style="animation-delay:${1+lines.length*1.6}s"><button id="go">처음부터 다시</button></p></div>`);
+    $('go').onclick=title;
+  },2200);
+}
+title();
+</script>
+</body>
+</html>
