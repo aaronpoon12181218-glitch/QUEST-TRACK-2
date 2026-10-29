@@ -181,7 +181,7 @@
     <div id="objectives"></div>
     <div id="status"></div>
     <div id="msg" class="hidden"></div>
-    <div id="hint">이동 WASD · 방향키 &nbsp;|&nbsp; 조사 E &nbsp;|&nbsp; 눈 가리기 Space &nbsp;|&nbsp; 수칙 Q &nbsp;|&nbsp; 안내도 M &nbsp;|&nbsp; 메모 수첩 N &nbsp;|&nbsp; 길 안내 G &nbsp;|&nbsp; 조작법 H</div>
+    <div id="hint">이동 WASD · 방향키 &nbsp;|&nbsp; 조사 E &nbsp;|&nbsp; 눈 가리기 Space &nbsp;|&nbsp; 수칙 Q &nbsp;|&nbsp; 안내도 M &nbsp;|&nbsp; 메모 수첩 N &nbsp;|&nbsp; 길 안내 G &nbsp;|&nbsp; 배경음 B &nbsp;|&nbsp; 조작법 H</div>
     <div id="guide" class="hidden">
       <h3>조작 방법</h3>
       <b>WASD · 방향키</b> 걷기 &nbsp;·&nbsp; <b>E</b> 조사하기 · 순찰 기록 남기기<br>
@@ -191,7 +191,7 @@
       ▸ 노란 불이 깜빡이는 순찰 기록기 앞에서 E 를 누르세요.<br>
       ▸ 경비실 감정대 앞에서 E: 오늘 들어온 그림을 감정합니다 (마우스로 클릭).<br>
       ▸ 바닥에서 희미하게 빛나는 쪽지는 밟고 지나가면 줍습니다.<br>
-      ▸ 노란 화살표가 다음에 할 일을 가리킵니다. <b>G</b> 로 켜고 끕니다.<br>
+      ▸ 노란 화살표가 다음에 할 일을 가리킵니다. <b>G</b> 로 켜고 끕니다. 배경음은 <b>B</b>.<br>
       ▸ 규칙 상황이 오면 눌러야 할 키가 화면에 나옵니다.
       <div class="dim">이 안내는 5초 뒤 사라집니다. H 를 누르면 다시 볼 수 있어요.</div>
     </div>
@@ -577,15 +577,11 @@ function audioInit() {
   S.noise = S.ac.createBuffer(1, len, S.ac.sampleRate);
   const d = S.noise.getChannelData(0);
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-  [55, 57.5].forEach(f => {   // 낮게 웅웅거리는 배경음
-    const o = S.ac.createOscillator();
-    const g = S.ac.createGain();
-    o.frequency.value = f;
-    g.gain.value = 0.035;
-    o.connect(g).connect(S.out);
-    o.start();
-  });
+  bgmInit();
 }
+// 첫 클릭이나 키 입력 때 소리를 켠다 (브라우저는 사용자가 누르기 전에는 소리를 막는다)
+addEventListener('pointerdown', () => audioInit());
+addEventListener('keydown', () => audioInit());
 function noise(dur, freq, gain, type = 'bandpass', q = 1, delay = 0) {
   if (!S.ac) return;
   const t = S.ac.currentTime + delay;
@@ -639,6 +635,105 @@ const sfx = {
   stab()   { [1, 1.06, 1.5].forEach(m => tone(220 * m * (0.9 + Math.random() * 0.2), 0.25, 'square', 0.05)); },
   stair()  { for (let i = 0; i < 4; i++) noise(0.06, 220, 0.12, 'lowpass', 1, i * 0.12); }
 };
+// ===================== 배경음악 (전부 코드로 만든 소리, 음악 파일 없음) =====================
+const BGM = { on: true, t: 0, step: 0, nextNote: 0, nextTick: 0, nextShot: 8, tock: false };
+// 오르골 자장가 (가 단조, 군데군데 반음을 섞어 기분 나쁘게). null 은 쉼표
+const LULLABY = [69, 72, 76, 75, 74, 72, 71, null, 69, 72, 76, 77, 76, 75, 72, null,
+                 71, 74, 77, 76, 75, 72, 69, 68, 69, null, null, null];
+function bgmInit() {
+  const ac = S.ac;
+  BGM.bus = ac.createGain();
+  BGM.bus.connect(S.out);
+  // 메아리: 넓은 전시실에서 울리는 느낌
+  const dl = ac.createDelay(1.5), fb = ac.createGain(), wet = ac.createGain(), lp = ac.createBiquadFilter();
+  dl.delayTime.value = 0.42; fb.gain.value = 0.38; wet.gain.value = 0.35;
+  lp.type = 'lowpass'; lp.frequency.value = 2200;
+  BGM.bus.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wet); wet.connect(S.out);
+  const layer = () => { const g = ac.createGain(); g.gain.value = 0; g.connect(BGM.bus); return g; };
+  const osc = (f, type, to, gain = 1) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = f; g.gain.value = gain; o.connect(g).connect(to); o.start(); return o; };
+  // 1) 드론: 낮은 단조 화음이 숨 쉬듯 열렸다 닫힌다
+  BGM.drone = layer();
+  const df = ac.createBiquadFilter();
+  df.type = 'lowpass'; df.frequency.value = 280; df.Q.value = 4;
+  df.connect(BGM.drone);
+  const lfo = osc(0.07, 'sine', ac.createGain()), lg = ac.createGain();
+  lg.gain.value = 170; lfo.connect(lg).connect(df.frequency);
+  [55, 55.4, 82.4, 130.8].forEach(f => osc(f, 'sawtooth', df, 0.25));
+  // 2) 긴장: 높은 불협화음 현 (위험할수록 커진다)
+  BGM.tense = layer();
+  [880, 932.3, 1244.5].forEach(f => {
+    const o = osc(f, 'sine', BGM.tense, 0.5), v = osc(5 + Math.random() * 2, 'sine', ac.createGain()), vg = ac.createGain();
+    vg.gain.value = 6; v.connect(vg).connect(o.frequency);
+  });
+  // 3) 아침: 따뜻한 다 장조 화음
+  BGM.morning = layer();
+  [261.6, 329.6, 392, 523.3].forEach(f => osc(f, 'triangle', BGM.morning, 0.5));
+}
+function musicBox(m, wobble) {
+  const ac = S.ac, t = ac.currentTime;
+  const f = 440 * Math.pow(2, (m - 69) / 12) * (1 + (Math.random() - 0.5) * 0.012 * wobble); // 밤이 깊을수록 음이 틀어진다
+  [[f, 'sine', 0.07], [f * 2, 'triangle', 0.02]].forEach(([fr, type, v]) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.value = fr;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(v, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+    o.connect(g).connect(BGM.bus); o.start(t); o.stop(t + 1.9);
+  });
+}
+// 근무 중 멀리서 들리는 소리 (밤이 깊을수록 자주, 종류도 늘어난다)
+const FAR_SOUNDS = [
+  () => sfx.creak(),
+  () => { for (let i = 0; i < 4; i++) noise(0.06, 180, 0.07, 'lowpass', 1, i * 0.5); },   // 먼 발소리
+  () => { for (let i = 0; i < 5; i++) noise(0.18, 1800 + Math.random() * 900, 0.05, 'bandpass', 6, i * 0.16); }, // 속삭임
+  () => { tone(55, 1.6, 'sawtooth', 0.05); tone(58.3, 1.6, 'sawtooth', 0.05); tone(61.7, 1.6, 'sawtooth', 0.05); }, // 낮은 피아노 덩어리
+  () => noise(0.4, 110, 0.35, 'lowpass'),   // 멀리서 문이 쾅
+  () => sfx.giggle()                        // 아이 웃음 (4일째 밤부터)
+];
+function bgmUpdate(dt) {
+  if (!S.ac || !BGM.bus) return;
+  const now = S.ac.currentTime, on = BGM.on ? 1 : 0;
+  const set = (g, v, tc = 0.8) => g.gain.setTargetAtTime(v * on, now, tc);
+  const night = G ? G.night : 1;
+  let drone = 0, tense = 0, morning = 0, box = false, tick = false;
+  if (mode === 'title' || mode === 'over' || mode === 'final') { drone = 0.05; box = true; }
+  else if (mode === 'talk') { drone = G && G.reason ? 0.16 : 0.07; tense = G && G.reason ? 0.02 : 0; } // 죽음 컷신은 더 무겁게
+  else if (['play', 'rules', 'memo', 'notes', 'map'].includes(mode)) {
+    drone = 0.09 + night * 0.015;
+    tense = dangerLevel() * 0.035;
+    box = mode === 'play' && !G.mini;
+  }
+  else if (mode === 'appraise') { drone = 0.08 + night * 0.012; tick = true; }
+  else if (mode === 'day') morning = 0.035;
+  if (G && G.mini && G.mini.type === 'conduct') drone *= 0.2; // 오케스트라가 울릴 때는 줄인다
+  set(BGM.drone, drone, mode === 'dead' ? 0.05 : 0.8);
+  set(BGM.tense, tense, 0.3);
+  set(BGM.morning, morning, 1.5);
+  BGM.t += dt;
+  if (!on) return;
+  // 오르골: 타이틀에서는 계속, 근무 중에는 가끔 한 소절
+  if (!box) BGM.step = 0;
+  else if (BGM.t >= BGM.nextNote) {
+    const n = LULLABY[BGM.step % LULLABY.length];
+    if (n) musicBox(n, mode === 'play' ? night : 0);
+    BGM.step++;
+    BGM.nextNote = BGM.t + 0.42 * (mode === 'play' ? 1 + night * 0.04 : 1);
+    if (mode === 'play' && BGM.step % LULLABY.length === 0) BGM.nextNote = BGM.t + 15 + Math.random() * 15;
+  }
+  // 감정하는 동안: 시계 째깍 소리
+  if (tick && BGM.t >= BGM.nextTick) {
+    BGM.tock = !BGM.tock;
+    noise(0.03, BGM.tock ? 2200 : 3200, 0.12, 'highpass');
+    BGM.nextTick = BGM.t + 0.5;
+  }
+  // 근무 중 멀리서 들리는 소리
+  if (mode === 'play' && !G.mini && BGM.t >= BGM.nextShot) {
+    const kinds = FAR_SOUNDS.length - (night >= 4 ? 0 : 1);
+    FAR_SOUNDS[Math.floor(Math.random() * kinds)]();
+    BGM.nextShot = BGM.t + (12 + Math.random() * 18) / (1 + night * 0.25);
+  }
+}
+
 function orchStart() {
   if (!S.ac) return;
   const g = S.ac.createGain();
@@ -1326,7 +1421,7 @@ const BLOCK_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
 // 한글 입력 상태에서도 키가 먹히도록: ㅇ→D, ㅈ→W …
 const HANGUL_KEYS = {
   'ㅈ': 'KeyW', 'ㅉ': 'KeyW', 'ㅁ': 'KeyA', 'ㄴ': 'KeyS', 'ㅇ': 'KeyD', 'ㄷ': 'KeyE', 'ㄸ': 'KeyE',
-  'ㅂ': 'KeyQ', 'ㅃ': 'KeyQ', 'ㅡ': 'KeyM', 'ㅜ': 'KeyN', 'ㅗ': 'KeyH', 'ㅎ': 'KeyG'
+  'ㅂ': 'KeyQ', 'ㅃ': 'KeyQ', 'ㅡ': 'KeyM', 'ㅜ': 'KeyN', 'ㅗ': 'KeyH', 'ㅎ': 'KeyG', 'ㅠ': 'KeyB'
 };
 const OLD_KEYS = { 13: 'Enter', 27: 'Escape', 32: 'Space', 37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown' };
 function keyOf(e) {
@@ -1376,6 +1471,7 @@ function onPress(k) {
   if (k === 'KeyM') mode = 'map';
   if (k === 'KeyN') openNotes();
   if (k === 'KeyH') showGuide();
+  if (k === 'KeyB') { BGM.on = !BGM.on; say(BGM.on ? '배경음을 켰다.' : '배경음을 껐다. (효과음은 그대로)', 1.5); }
   if (k === 'KeyG') { guideOn = !guideOn; say(guideOn ? '길 안내를 켰다.' : '길 안내를 껐다.', 1.5); }
   if (k === 'Space' && G.paint === 'hunting' && G.floor === 1 && inZone(paintZone())) startAct();
 }
@@ -2727,6 +2823,7 @@ function loop(now) {
   if (G) G.clock += dt;
   if (mode === 'play') { update(dt); if (mode === 'play') updateHud(); }
   if (mode === 'appraise') APR.update(dt);
+  bgmUpdate(dt);
   if (mode === 'dead') {
     G.deathT += dt;
     if (G.deathT >= 1.6 && $('screen').classList.contains('hidden')) showDeath();
