@@ -2304,51 +2304,66 @@ const ART = (() => {
     glow(g, 230, 240, 320, 'rgba(255,170,90,.14)');
     g.save(); g.globalCompositeOperation = 'multiply'; g.fillStyle = lg(g, 0, 0, W, 0, [[0, '#a09080'], [0.3, '#ffffff'], [0.7, '#9a9090'], [1, '#403838']]); g.fillRect(0, 0, W, H); g.restore();
   });
-  const dirMan = () => rimmed('dirMan', q => {
-    q.beginPath(); q.moveTo(296, 330); q.bezierCurveTo(300, 270, 322, 246, 372, 234); q.quadraticCurveTo(430, 222, 452, 212);
-    q.lineTo(508, 212); q.quadraticCurveTo(530, 222, 588, 234); q.bezierCurveTo(638, 246, 660, 270, 664, 330); q.closePath(); q.fill();
-    q.beginPath(); q.ellipse(480, 160, 46, 60, 0, 0, TAU); q.fill();
-    q.beginPath(); q.ellipse(433, 168, 8, 15, 0.1, 0, TAU); q.fill(); q.beginPath(); q.ellipse(527, 168, 8, 15, -0.1, 0, TAU); q.fill();
-    q.fillRect(456, 196, 48, 30);
-  }, '#0a0807', [[6, 2, 'rgba(255,185,120,.85)', 1.5], [-3, 4, 'rgba(120,130,170,.22)', 1]], g => {
-    // 양복
-    g.fillStyle = lg(g, 300, 0, 660, 0, [[0, '#2c2420'], [0.4, '#141110'], [1, '#070606']]); g.fillRect(290, 200, 380, 140);
-    g.fillStyle = 'rgba(255,255,255,.035)'; for (let x = 300; x < 660; x += 7) g.fillRect(x, 230, 1, 110);
+  // 건장한 관장: 책상을 짚고 선 역삼각형 몸, 그림자에 묻힌 얼굴
+  const dirShape = q => {
+    // 머리 (넓은 이마 · 각진 턱)
+    q.beginPath(); q.moveTo(442, 122); q.bezierCurveTo(438, 82, 458, 66, 480, 66); q.bezierCurveTo(502, 66, 522, 82, 518, 122);
+    q.lineTo(516, 150); q.quadraticCurveTo(512, 172, 492, 178); q.lineTo(468, 178); q.quadraticCurveTo(448, 172, 444, 150); q.closePath(); q.fill();
+    q.beginPath(); q.ellipse(440, 128, 7, 13, 0.1, 0, TAU); q.fill(); q.beginPath(); q.ellipse(520, 128, 7, 13, -0.1, 0, TAU); q.fill();
+    // 굵은 목 · 승모근 · 넓은 어깨 · 팔꿈치를 벌린 팔 · 좁아지는 허리
+    q.beginPath();
+    q.moveTo(452, 160);
+    q.bezierCurveTo(444, 176, 404, 180, 356, 186);                  // 두꺼운 왼쪽 승모근
+    q.bezierCurveTo(306, 190, 278, 210, 276, 244);                  // 둥근 왼쪽 어깨(삼각근)
+    q.bezierCurveTo(270, 260, 258, 270, 254, 284); q.lineTo(258, 300); q.lineTo(306, 300); // 굵은 위팔 → 책상 뒤로
+    q.lineTo(318, 264); q.lineTo(342, 246);                         // 왼팔 안쪽 → 겨드랑이
+    q.bezierCurveTo(356, 268, 372, 290, 386, 300);                  // 허리로 좁아지는 옆구리
+    q.lineTo(574, 300);
+    q.bezierCurveTo(588, 290, 604, 268, 620, 246);
+    q.lineTo(642, 264); q.lineTo(654, 300); q.lineTo(702, 300); q.lineTo(706, 284);
+    q.bezierCurveTo(702, 270, 690, 260, 684, 244); q.bezierCurveTo(682, 210, 654, 190, 604, 186);
+    q.bezierCurveTo(556, 180, 516, 176, 508, 160);
+    q.closePath(); q.fill();
+  };
+  const dirMan = () => rimmed('dirMan2', dirShape, '#0a0807', [[6, 2, 'rgba(255,185,120,.85)', 1.5], [-3, 4, 'rgba(120,130,170,.22)', 1]], g => {
+    // 검붉은 양복 (왼쪽 스탠드 빛 → 오른쪽 어둠)
+    g.fillStyle = lg(g, 260, 0, 700, 0, [[0, '#5e1620'], [0.35, '#3a0a12'], [0.65, '#22060a'], [1, '#0c0203']]); g.fillRect(250, 150, 460, 160);
+    g.strokeStyle = 'rgba(255,120,120,.05)'; g.lineWidth = 1;
+    for (let x = 300; x < 670; x += 8) { g.beginPath(); g.moveTo(x, 200); g.lineTo(480 + (x - 480) * 0.86, 300); g.stroke(); } // 줄무늬
+    // 근육 그늘: 가슴 아래 · 팔 안쪽 · 팔꿈치
+    g.fillStyle = lg(g, 0, 236, 0, 276, [[0, 'rgba(0,0,0,0)'], [0.5, 'rgba(0,0,0,.35)'], [1, 'rgba(0,0,0,0)']]); g.fillRect(340, 236, 280, 40);
+    glow(g, 312, 206, 40, 'rgba(255,170,130,.14)');                       // 왼쪽 어깨 위 빛
+    g.fillStyle = lg(g, 0, 182, 0, 210, [[0, 'rgba(255,150,120,.06)'], [1, 'rgba(0,0,0,0)']]); g.fillRect(300, 182, 360, 28); // 승모근 윗면
+    g.fillStyle = 'rgba(0,0,0,.45)'; poly(g, [[306, 300], [318, 264], [342, 246], [334, 300]]); g.fill();
+    poly(g, [[654, 300], [642, 264], [618, 246], [626, 300]]); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.55)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(266, 282); g.quadraticCurveTo(280, 278, 290, 286); g.moveTo(694, 282); g.quadraticCurveTo(680, 278, 670, 286); g.stroke();
     // 셔츠 · 넥타이
-    g.fillStyle = lg(g, 450, 0, 512, 0, [[0, '#c8b8a0'], [1, '#4a4038']]); poly(g, [[450, 214], [510, 214], [480, 300]]); g.fill();
-    g.fillStyle = lg(g, 470, 0, 492, 0, [[0, '#6a1414'], [1, '#2a0606']]); poly(g, [[472, 222], [488, 222], [494, 300], [466, 300]]); g.fill();
-    g.fillStyle = '#4a0c0c'; poly(g, [[470, 214], [490, 214], [488, 228], [472, 228]]); g.fill();
-    g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; for (let y = 236; y < 300; y += 10) { g.beginPath(); g.moveTo(468, y); g.lineTo(492, y - 6); g.stroke(); }
+    g.fillStyle = lg(g, 456, 0, 504, 0, [[0, '#3a3430'], [1, '#121010']]); poly(g, [[456, 178], [504, 178], [480, 268]]); g.fill();
+    g.fillStyle = lg(g, 472, 0, 490, 0, [[0, '#5a1214'], [1, '#200406']]); poly(g, [[473, 188], [487, 188], [492, 290], [468, 290]]); g.fill();
+    g.fillStyle = '#3a0a0c'; poly(g, [[471, 178], [489, 178], [487, 192], [473, 192]]); g.fill();
     // 옷깃
-    g.fillStyle = '#231c18'; poly(g, [[452, 212], [424, 246], [440, 252], [474, 304], [462, 304]]); g.fill();
-    g.fillStyle = '#0c0a09'; poly(g, [[508, 212], [536, 246], [520, 252], [486, 304], [498, 304]]); g.fill();
-    g.strokeStyle = 'rgba(255,190,130,.3)'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(452, 212); g.lineTo(424, 246); g.lineTo(440, 252); g.lineTo(474, 304); g.stroke();
-    // 목
-    g.fillStyle = lg(g, 456, 0, 504, 0, [[0, '#5a4234'], [1, '#140e0b']]); g.fillRect(456, 196, 48, 22);
-    // 얼굴 (아래 왼쪽 스탠드 빛)
-    g.save(); g.beginPath(); g.ellipse(480, 160, 46, 60, 0, 0, TAU); g.clip();
-    g.fillStyle = rg(g, 436, 206, 4, 110, [[0, '#7a563f'], [0.3, '#4a3426'], [0.62, '#1a120c'], [1, '#060403']]); g.fillRect(420, 96, 120, 130);
-    glow(g, 462, 166, 22, 'rgba(0,0,0,.6)', 'source-over'); glow(g, 500, 166, 22, 'rgba(0,0,0,.7)', 'source-over');
-    g.fillStyle = lg(g, 470, 0, 540, 0, [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,.75)']]); g.fillRect(470, 96, 80, 130);
-    g.fillStyle = 'rgba(0,0,0,.45)'; poly(g, [[482, 158], [494, 188], [482, 192]]); g.fill();
-    g.fillStyle = 'rgba(255,200,150,.18)'; poly(g, [[478, 160], [473, 186], [479, 190]]); g.fill();
-    glow(g, 446, 194, 20, 'rgba(255,190,140,.14)');
-    g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 2; g.beginPath(); g.moveTo(452, 178); g.quadraticCurveTo(448, 196, 456, 208); g.moveTo(508, 178); g.quadraticCurveTo(512, 196, 504, 208); g.stroke();
-    g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(420, 214, 120, 20);
-    // 뒤로 넘긴 머리 (이마 가운데가 V 자)
-    g.fillStyle = '#0b0807'; g.beginPath(); g.moveTo(430, 150); g.bezierCurveTo(424, 104, 452, 92, 480, 92); g.bezierCurveTo(508, 92, 536, 104, 530, 150);
-    g.quadraticCurveTo(522, 124, 504, 118); g.quadraticCurveTo(490, 116, 480, 128); g.quadraticCurveTo(470, 116, 456, 118); g.quadraticCurveTo(438, 124, 430, 150); g.fill();
-    g.strokeStyle = 'rgba(255,200,150,.16)'; g.lineWidth = 1;
-    for (let i = 0; i < 12; i++) { g.beginPath(); g.moveTo(444 + i * 6, 124 - Math.abs(i - 6) * 0.5); g.quadraticCurveTo(450 + i * 5, 104, 474 + i * 2, 96); g.stroke(); }
-    g.restore();
-    // 안경테
-    g.strokeStyle = '#8a7040'; g.lineWidth = 1.8;
-    g.beginPath(); g.arc(461, 166, 15, 0, TAU); g.stroke(); g.beginPath(); g.arc(499, 166, 15, 0, TAU); g.stroke();
-    g.beginPath(); g.moveTo(476, 164); g.quadraticCurveTo(480, 160, 484, 164); g.stroke();
-    g.beginPath(); g.moveTo(446, 164); g.lineTo(434, 160); g.moveTo(514, 164); g.lineTo(526, 160); g.stroke();
-    g.fillStyle = 'rgba(255,214,150,.30)'; g.beginPath(); g.arc(461, 166, 14, 0, TAU); g.fill(); g.fillStyle = 'rgba(200,180,150,.16)'; g.beginPath(); g.arc(499, 166, 14, 0, TAU); g.fill();
+    g.fillStyle = '#44101a'; poly(g, [[458, 176], [408, 218], [428, 226], [474, 284], [466, 284]]); g.fill();
+    g.fillStyle = '#16040a'; poly(g, [[502, 176], [552, 218], [532, 226], [486, 284], [494, 284]]); g.fill();
+    g.strokeStyle = 'rgba(255,190,130,.28)'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(458, 176); g.lineTo(408, 218); g.lineTo(428, 226); g.lineTo(474, 284); g.stroke();
+    // 굵은 목
+    g.fillStyle = lg(g, 450, 0, 510, 0, [[0, '#2a1c16'], [1, '#080504']]); g.fillRect(450, 150, 60, 30);
+    // 얼굴: 전부 그림자 속. 왼쪽 턱선에만 스탠드 빛이 아주 조금 닿는다
+    g.fillStyle = '#060404'; g.fillRect(430, 60, 100, 122);
+    g.save(); g.beginPath(); g.moveTo(444, 118); g.lineTo(446, 150); g.quadraticCurveTo(450, 170, 468, 177); g.lineTo(470, 172); g.quadraticCurveTo(456, 166, 452, 148); g.lineTo(450, 118); g.closePath();
+    g.fillStyle = 'rgba(255,160,110,.14)'; g.fill(); g.restore();
+    // 짧게 넘긴 머리
+    g.fillStyle = '#030202'; g.beginPath(); g.moveTo(440, 112); g.bezierCurveTo(436, 78, 458, 64, 480, 64); g.bezierCurveTo(502, 64, 524, 78, 520, 112);
+    g.quadraticCurveTo(510, 90, 480, 88); g.quadraticCurveTo(450, 90, 440, 112); g.fill();
+    g.strokeStyle = 'rgba(255,200,150,.08)'; g.lineWidth = 1;
+    for (let i = 0; i < 10; i++) { g.beginPath(); g.moveTo(448 + i * 7, 90); g.quadraticCurveTo(452 + i * 6, 74, 470 + i * 3, 66); g.stroke(); }
+    // 안경테 (희미하게)
+    g.strokeStyle = 'rgba(120,110,100,.5)'; g.lineWidth = 1.6;
+    g.beginPath(); g.arc(463, 130, 13, 0, TAU); g.stroke(); g.beginPath(); g.arc(497, 130, 13, 0, TAU); g.stroke();
+    g.beginPath(); g.moveTo(476, 128); g.quadraticCurveTo(480, 124, 484, 128); g.stroke();
+    g.beginPath(); g.moveTo(450, 128); g.lineTo(440, 124); g.moveTo(510, 128); g.lineTo(520, 124); g.stroke();
+    g.fillStyle = 'rgba(255,214,150,.08)'; g.beginPath(); g.arc(463, 130, 12, 0, TAU); g.fill(); g.fillStyle = 'rgba(200,180,150,.05)'; g.beginPath(); g.arc(497, 130, 12, 0, TAU); g.fill();
   });
-  const DIR_SK = ['#2a1a12', '#8a6450', '#e8bfa0'];
   const dirDesk = () => layer('dirDesk', W, H, g => {
     // 상판
     poly(g, [[130, 280], [830, 280], [892, 346], [68, 346]], lg(g, 0, 280, 0, 346, [[0, '#2a110a'], [1, '#43200f']]));
@@ -2381,15 +2396,22 @@ const ART = (() => {
     g.fillStyle = lg(g, 176, 0, 284, 0, [[0, '#06200f'], [0.35, '#2f8a5a'], [0.5, '#5ab884'], [0.7, '#1a5a36'], [1, '#041409']]);
     g.beginPath(); g.moveTo(174, 240); g.quadraticCurveTo(176, 212, 230, 208); g.quadraticCurveTo(284, 212, 286, 240); g.closePath(); g.fill();
     g.fillStyle = '#c8a050'; g.fillRect(172, 238, 116, 4);
-    // 소매와 맞댄 손
-    g.fillStyle = 'rgba(0,0,0,.4)'; g.beginPath(); g.ellipse(480, 340, 170, 10, 0, 0, TAU); g.fill();
-    capsule(g, [350, 338], [424, 314], 42, 34, ['#050403', '#2a2420', '#4a3e36']);
-    capsule(g, [610, 338], [536, 314], 42, 34, ['#050403', '#141110', '#221c1a']);
-    capsule(g, [416, 317], [430, 312], 36, 32, ['#3a342c', '#a89c88', '#d8ceb8']);
-    capsule(g, [544, 317], [530, 312], 36, 32, ['#1a1612', '#6a6050', '#8a8070']);
-    // 손끝을 맞댄 손 (첨탑 모양)
-    hand(g, 434, 310, -0.86, 38, -1, { skin: DIR_SK, spread: 0.2, bend: 0.03, thumb: 0.35, flen: 1.08, fw: 0.9, nail: 'rgba(240,210,190,.6)' });
-    hand(g, 526, 310, -2.28, 38, 1, { skin: ['#160e0a', '#5a3e30', '#9a7660'], spread: 0.2, bend: -0.03, thumb: 0.35, flen: 1.08, fw: 0.9, nail: 'rgba(170,140,120,.5)' });
+    // 팔에서 이어진 아래팔 (책상 뒤 → 손목)
+    g.fillStyle = 'rgba(0,0,0,.45)'; g.beginPath(); g.ellipse(330, 330, 60, 9, 0, 0, TAU); g.fill(); g.beginPath(); g.ellipse(630, 330, 60, 9, 0, 0, TAU); g.fill();
+    capsule(g, [282, 276], [326, 312], 46, 38, ['#120306', '#3e0c14', '#5e1620']);
+    capsule(g, [678, 276], [634, 312], 46, 38, ['#060102', '#1e050a', '#2c0810']);
+    capsule(g, [322, 309], [332, 316], 34, 30, ['#0c0a09', '#2a2420', '#3a3430']); // 셔츠 소맷부리
+    capsule(g, [638, 309], [628, 316], 34, 30, ['#060505', '#161210', '#221c1a']);
+    // 책상을 짚은 검은 가죽 장갑 (손가락을 펼쳐 꽉 짚음)
+    const glove = (x, s, lit) => {
+      const sk = lit ? ['#040303', '#151010', '#3a2c28'] : ['#020202', '#0c0909', '#1c1614'];
+      for (let i = 0; i < 4; i++) capsule(g, [x + s * (-14 + i * 9), 322], [x + s * (-19 + i * 11), 337 - Math.abs(i - 1.5) * 2], 9.5, 8, sk);
+      capsule(g, [x + s * 16, 318], [x + s * 30, 334], 10, 8, sk);           // 엄지
+      g.fillStyle = lg(g, x - 26, 0, x + 26, 0, lit ? [[0, '#2a201c'], [0.5, '#120c0b'], [1, '#050404']] : [[0, '#120e0c'], [1, '#030303']]);
+      g.beginPath(); g.ellipse(x, 320, 26, 12, 0, 0, TAU); g.fill();       // 손등
+      if (lit) { g.strokeStyle = 'rgba(255,200,160,.22)'; g.lineWidth = 1.2; g.beginPath(); g.ellipse(x - 4, 316, 18, 6, 0, PI * 1.05, PI * 1.7); g.stroke(); }
+    };
+    glove(336, -1, true); glove(624, 1, false);
   });
 
   // ======================================================================
@@ -3230,27 +3252,21 @@ const ART = (() => {
     director(c, t) {
       push(c, t, 0.12, 480, 170, 14);
       c.drawImage(dirBG(), 0, 0);
+      const fs = 0.92 + 0.08 * Math.sin(t * 13) * Math.sin(t * 4.1);
+      c.save(); c.filter = 'brightness(0) blur(5px)'; c.globalAlpha = 0.75 * fs;
+      c.translate(560 + (1 - fs) * 40, 330); c.scale(1.45, 1.35); c.translate(-480, -330); c.drawImage(dirMan(), 0, 0); c.restore();
       const br = Math.sin(t * 1.2);
       c.save(); c.translate(480, 330); c.scale(1 + br * 0.003, 1 + br * 0.008); c.translate(-480, -330);
       c.drawImage(dirMan(), 0, 0);
-      // 웃음 (조금씩 벌어짐)
-      const k = ease(t / 6), sw = 18 + 8 * k, sy = 199;
-      const mouth = () => { c.beginPath(); c.moveTo(480 - sw, sy - 3 - k * 2); c.quadraticCurveTo(480, sy + 11 + k * 4, 480 + sw, sy - 3 - k * 2); c.quadraticCurveTo(480, sy + 4 + k * 2, 480 - sw, sy - 3 - k * 2); c.closePath(); };
-      mouth(); c.fillStyle = '#0b0605'; c.fill();
-      c.save(); mouth(); c.clip();
-      c.fillStyle = lg(c, 480 - sw, 0, 480 + sw, 0, [[0, '#b8aa90'], [0.5, '#8a7c68'], [1, '#2a241c']]); c.fillRect(480 - sw, sy - 6, sw * 2, 7 + k * 3);
-      c.fillStyle = 'rgba(20,10,8,.6)'; for (let x = -sw; x < sw; x += 4.5) c.fillRect(480 + x, sy - 6, 0.7, 12);
-      c.restore();
-      c.strokeStyle = 'rgba(255,200,150,.25)'; c.lineWidth = 1; c.beginPath(); c.moveTo(480 - sw, sy - 3 - k * 2); c.quadraticCurveTo(480, sy + 15 + k * 4, 480 + sw, sy - 3 - k * 2); c.stroke();
       // 안경 번쩍
       const gp = (t % 4.5) / 0.7;
-      [[461, 166], [499, 166]].forEach(([x, y], i) => {
-        c.save(); c.beginPath(); c.arc(x, y, 14, 0, TAU); c.clip();
-        c.fillStyle = `rgba(255,226,170,${(0.18 + 0.1 * Math.sin(t * 2 + i)).toFixed(3)})`; c.fillRect(x - 15, y - 15, 30, 30);
+      [[463, 130], [497, 130]].forEach(([x, y], i) => {
+        c.save(); c.beginPath(); c.arc(x, y, 12, 0, TAU); c.clip();
+        c.fillStyle = `rgba(255,226,170,${(0.06 + 0.04 * Math.sin(t * 2 + i)).toFixed(3)})`; c.fillRect(x - 15, y - 15, 30, 30);
         if (gp < 1) { const gx = x - 20 + gp * 40; c.globalCompositeOperation = 'lighter'; c.fillStyle = lg(c, gx - 6, y, gx + 6, y, [[0, 'rgba(255,255,255,0)'], [0.5, 'rgba(255,250,230,.9)'], [1, 'rgba(255,255,255,0)']]); c.translate(gx, y); c.rotate(0.6); c.fillRect(-6, -20, 12, 40); }
         c.restore();
       });
-      if (gp < 1) { const s = Math.sin(gp * PI) * 12; c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(255,250,230,.9)'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(452 - s, 158); c.lineTo(452 + s, 158); c.moveTo(452, 158 - s); c.lineTo(452, 158 + s); c.stroke(); c.restore(); glow(c, 452, 158, 10 + s, 'rgba(255,240,200,.6)'); }
+      if (gp < 1) { const s = Math.sin(gp * PI) * 12; c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(255,250,230,.9)'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(454 - s, 122); c.lineTo(454 + s, 122); c.moveTo(454, 122 - s); c.lineTo(454, 122 + s); c.stroke(); c.restore(); glow(c, 454, 122, 10 + s, 'rgba(255,240,200,.6)'); }
       c.restore();
       c.drawImage(dirDesk(), 0, 0);
       // 스탠드 빛 (떨림)
@@ -3672,6 +3688,248 @@ const ART = (() => {
   return out;
 })();
 
+// ===================== 인트로 도트 컷신 =====================
+// 240×100 으로 그린 뒤 4배로 키워서 도트(픽셀) 느낌을 낸다. 글자는 480×200 에 써서 2배로 키운다
+const PX = (() => {
+  const W = 240, H = 100;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const p = cv.getContext('2d');
+  const tc = document.createElement('canvas'); tc.width = 480; tc.height = 200;
+  const q = tc.getContext('2d');
+  const R = (col, x, y, w = 1, h = 1) => { p.fillStyle = col; p.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
+  const rng = seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // 두 색을 바둑판으로 섞기 (도트식 그라데이션)
+  const dith = (a, b, x, y, w, h, every = 2) => { R(a, x, y, w, h); for (let j = y; j < y + h; j++) for (let i = x + (j & 1); i < x + w; i += every) R(b, i, j); };
+  // 도트 원
+  const disc = (col, cx, cy, r) => { for (let j = -r; j <= r; j++) { const w = Math.round(Math.sqrt(r * r - j * j)); R(col, cx - w, cy + j, w * 2 + 1, 1); } };
+  // 빛: 가운데서 멀어질수록 점이 듬성듬성해지는 도트식 퍼짐 (4×4 바이어 무늬)
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const light = (col, cx, cy, rx, ry, k = 1) => {
+    for (let y = Math.floor(cy - ry); y <= cy + ry; y++) for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
+      const d = Math.hypot((x - cx) / rx, (y - cy) / ry);
+      if (d < 1 && BAYER[(y & 3) * 4 + (x & 3)] / 16 < (1 - d) * k) R(col, x, y);
+    }
+  };
+  // 굵은 선: 사각 점을 찍어 잇는다 (팔 · 손가락)
+  const ln = (col, x0, y0, x1, y1, th = 2) => {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) | 0;
+    for (let i = 0; i <= n; i++) R(col, x0 + (x1 - x0) * i / (n || 1) - th / 2, y0 + (y1 - y0) * i / (n || 1) - th / 2, th, th);
+  };
+  const text = (s, x, y, size, col, align = 'center', bold = true) => {
+    q.fillStyle = col; q.font = `${bold ? 'bold ' : ''}${size}px "Malgun Gothic", sans-serif`; q.textAlign = align; q.textBaseline = 'middle'; q.fillText(s, x, y);
+  };
+  const out = (c, withText) => {
+    c.imageSmoothingEnabled = false;
+    c.drawImage(cv, 0, 0, 960, 400);
+    if (withText) c.drawImage(tc, 0, 0, 960, 400);
+    c.imageSmoothingEnabled = true;
+  };
+  const clearText = () => q.clearRect(0, 0, 480, 200);
+  const stars = (() => { const r = rng(5), a = []; for (let i = 0; i < 50; i++) a.push([r() * W | 0, r() * 34 | 0, r()]); return a; })();
+
+  return {
+    // 1. 비 오는 방: 고지서 앞에서 머리를 감싼 주인공
+    px_room(c, t) {
+      R('#161826', 0, 0, W, H);
+      for (let x = 2; x < W; x += 7) R('#1b1e2f', x, 0, 3, 78);          // 벽지 줄무늬
+      R('#232031', 0, 76, W, 2);
+      // 창문 (비 · 도시 불빛 · 가끔 번개)
+      const flash = (t % 9) > 8.75;
+      R('#2c2b3a', 148, 10, 62, 54); R(flash ? '#3c4c7c' : '#0c1430', 151, 13, 56, 48);
+      const cr = rng(11);
+      for (let i = 0; i < 34; i++) R(['#e0a040', '#c87830', '#8090c0', '#e8d080'][i % 4], 152 + cr() * 54, 36 + cr() * 24, 1, 1);
+      for (let i = 0; i < 26; i++) { const x = 152 + (i * 13) % 54, y = 13 + ((t * 55 + i * 17) % 46); R('#5a6a9a', x, y, 1, 3); }
+      R('#2c2b3a', 178, 13, 2, 48); R('#2c2b3a', 151, 36, 56, 2);
+      R('#3a3446', 146, 62, 66, 3);                                      // 창턱
+      R('#101220', 140, 8, 6, 70); R('#101220', 212, 8, 6, 70);           // 커튼
+      // 벽의 연체 안내 · 달력
+      R('#c8c0aa', 30, 14, 20, 24); for (let y = 20; y < 34; y += 3) R('#8a8270', 33, y, 14, 1); R('#a01818', 40, 31, 7, 4);
+      R('#d8d2c4', 60, 12, 22, 26); R('#b01818', 60, 12, 22, 6);
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 5; i++) R('#6a6458', 62 + i * 4, 21 + j * 4, 2, 2);
+      R('#c01818', 69, 28, 4, 1); R('#c01818', 69, 31, 4, 1); R('#c01818', 68, 29, 1, 2); R('#c01818', 73, 29, 1, 2);
+      // 스탠드 빛 (떨림)
+      const fl = Math.sin(t * 13) * Math.sin(t * 3.7) > 0.85 ? 0 : 1;
+      if (fl) { light('#33291f', 24, 58, 34, 22, 1.1); light('#4a3a24', 24, 66, 26, 6, 1.2); }
+      R('#2a2418', 22, 64, 8, 3); R('#3a3020', 25, 46, 1, 18); R('#3a3020', 25, 46, 6, 1);
+      R('#6a5a3a', 16, 40, 16, 5); R('#8a7a4a', 18, 40, 12, 1); if (fl) R('#ffe2a0', 21, 45, 6, 1);
+      // 책상
+      R('#3a2618', 6, 66, 140, 4); R('#4e3420', 6, 66, 140, 1); R('#2a1a10', 8, 70, 136, 12); R('#1c120a', 72, 72, 30, 1);
+      R('#20140c', 10, 82, 4, 10); R('#20140c', 138, 82, 4, 10);
+      // 책상 위 고지서
+      [[30, 61], [44, 62], [96, 61]].forEach(([x, y], i) => { R('#d8d0bc', x, y, 14, 5); R('#8a8270', x + 2, y + 1, 9, 1); R('#b01818', x + 9 + (i % 2), y + 2, 3, 2); });
+      // 컵라면
+      R('#e8e4dc', 118, 56, 9, 10); R('#c02020', 118, 59, 9, 2); R('#bdb6aa', 118, 56, 9, 1); R('#d8c8a0', 124, 50, 1, 6); R('#d8c8a0', 126, 51, 1, 5);
+      // 바닥
+      R('#121320', 0, 82, W, 18); for (let x = 0; x < W; x += 20) R('#0e0f1a', x, 82, 1, 18);
+      // 주인공: 의자에 앉아 머리를 감싼 뒷모습 (숨 쉬기)
+      const b = Math.sin(t * 1.4) > 0 ? 0 : 1, body = '#0c0d14';
+      R('#0e0e16', 71, 66, 22, 28); disc('#0e0e16', 82, 66, 11); R('#17171f', 73, 64, 1, 28); // 의자 등받이
+      disc(body, 82, 64 + b, 15); R(body, 67, 64 + b, 31, 16);            // 굽은 등
+      disc(body, 82, 45 + b, 8); R(body, 78, 50 + b, 8, 6);                // 머리 · 목
+      R('#1a1a26', 77, 37 + b, 10, 2); R('#1a1a26', 75, 39 + b, 2, 2);     // 머리카락 윗면
+      ln(body, 70, 58 + b, 62, 47 + b, 5); ln(body, 62, 47 + b, 74, 40 + b, 4); // 왼팔 (팔꿈치를 벌림)
+      ln(body, 94, 58 + b, 102, 47 + b, 5); ln(body, 102, 47 + b, 90, 40 + b, 4); // 오른팔
+      R('#b88a68', 73, 38 + b, 4, 3); R('#b88a68', 87, 38 + b, 4, 3); R('#946a4c', 74, 40 + b, 3, 1); R('#946a4c', 88, 40 + b, 3, 1);
+      if (fl) { R('#c8803c', 67, 66 + b, 1, 12); ln('#c8803c', 61, 47 + b, 68, 57 + b, 1); R('#c8803c', 74, 42 + b, 1, 6); } // 스탠드 쪽 테두리 빛
+      ln('#4a5a8a', 104, 47 + b, 97, 57 + b, 1); R('#4a5a8a', 97, 64 + b, 1, 12); R('#4a5a8a', 90, 42 + b, 1, 6); // 창문 쪽 테두리 빛
+      out(c);
+    },
+
+    // 2. 휴대폰 구인 공고
+    px_poster(c, t) {
+      R('#08080e', 0, 0, W, H);
+      [[30, 30, 8, '#14141f'], [60, 70, 6, '#1a1620'], [190, 24, 9, '#16141e'], [210, 72, 7, '#1c1814'], [170, 50, 4, '#201a12']].forEach(([x, y, r, col]) => disc(col, x, y, r));
+      const sh = Math.floor(t * 2) % 5 === 0 ? 1 : 0;                    // 손이 살짝 떨림
+      const X = 94 + sh;
+      light('#1a1c28', X + 26, 50, 56, 52, 0.9);                         // 화면 빛
+      // 휴대폰
+      R('#101014', X, 3, 52, 96); R('#26262c', X + 1, 3, 50, 1);
+      R('#e9e6de', X + 3, 8, 46, 88);
+      R('#101014', X + 20, 4, 12, 3);                                     // 노치
+      R('#1f2a3a', X + 3, 8, 46, 9);                                      // 머리띠
+      // 미술관 사진 칸
+      R('#18203a', X + 6, 20, 40, 18); R('#e8e4cc', X + 38, 23, 3, 3);
+      R('#2a2c3a', X + 12, 26, 26, 1); R('#2a2c3a', X + 14, 25, 22, 1); R('#2a2c3a', X + 16, 24, 18, 1);
+      for (let i = 0; i < 5; i++) R('#3a3c4c', X + 13 + i * 5, 28, 2, 8);
+      R(Math.sin(t * 3) > 0 ? '#e8b040' : '#8a6a20', X + 31, 30, 2, 3);
+      R('#c02020', X + 6, 41, 10, 4); R('#cfcac0', X + 18, 41, 8, 4);
+      R('#2a3a5a', X + 6, 84, 40, 8);                                     // 지원 버튼
+      // 손 (왼손으로 쥐고 오른손 엄지)
+      for (let i = 0; i < 4; i++) { R('#b88a68', X - 4, 30 + i * 9, 5, 6); R('#946a4c', X - 4, 35 + i * 9, 5, 1); }
+      ln('#b88a68', X + 62, 100, X + 46, 80, 7); disc('#b88a68', X + 45, 79, 3); R('#d8b090', X + 43, 77, 3, 2); ln('#946a4c', X + 60, 100, X + 44, 82, 1); // 오른손 엄지
+      // 글자 (480×200 좌표)
+      clearText();
+      const x2 = X * 2;
+      text('구인 공고', x2 + 52, 25, 11, '#e8e4d8');
+      text('급구', x2 + 22, 86, 7, '#fff'); text('야간', x2 + 44, 86, 7, '#555');
+      text('미술관 야간 경비', x2 + 12, 102, 11, '#1a1a1a', 'left');
+      text('일주일 단기 · 경력 무관', x2 + 12, 116, 8, '#666', 'left', false);
+      text('일급 500,000원', x2 + 12, 134, 12, Math.sin(t * 4) > 0 ? '#c01010' : '#e83030', 'left');
+      text('근무 01:00 ~ 06:00', x2 + 12, 150, 7, '#444', 'left', false);
+      text('지원 문의: 관장실', x2 + 12, 160, 7, '#444', 'left', false);
+      text('전화로 지원하기', x2 + 52, 176, 9, '#e8e4d8');
+      text('5%', x2 + 88, 12, 7, '#c02020', 'right');
+      out(c, true);
+    },
+
+    // 3. 관장실: 책상을 짚고 선 건장한 관장. 얼굴은 그림자, 희미한 안경, 검붉은 정장
+    px_director(c, t) {
+      R('#140d0a', 0, 0, W, H);
+      for (let x = 0; x < W; x += 16) R('#1a110c', x, 0, 1, 72);          // 나무 판벽
+      // 책장 (양쪽)
+      const br = rng(21);
+      for (const sx of [4, 200]) {
+        R('#1e140e', sx, 4, 36, 66);
+        for (let s = 0; s < 4; s++) {
+          R('#2a1c12', sx, 18 + s * 16, 36, 2);
+          for (let x = sx + 2; x < sx + 34;) { const w = 2 + (br() * 3 | 0), h = 8 + (br() * 5 | 0); R(['#3a1a18', '#1a2a3a', '#2a3a1e', '#3a3018', '#2a1a2e'][br() * 5 | 0], x, 18 + s * 16 - h, w, h); x += w + 1; }
+        }
+      }
+      // 벽의 초상화 (옆으로 비켜 걸림)
+      R('#6a5020', 158, 6, 32, 24); R('#8a6a2a', 159, 7, 30, 1); R('#120c08', 161, 9, 26, 18);
+      R('#1e1610', 170, 12, 8, 8); R('#1e1610', 166, 20, 16, 7);
+      // 초록 은행 스탠드와 빛
+      const fl = 0.85 + 0.15 * Math.sin(t * 11) * Math.sin(t * 3.1) > 0.75;
+      if (fl) light('#3a2a16', 38, 62, 36, 14, 1.1);
+      R('#1e5a3a', 30, 48, 16, 4); R('#2e7a4e', 32, 48, 12, 1); R('#8a6a2a', 37, 52, 2, 14); R('#8a6a2a', 33, 66, 10, 2);
+      if (fl) R('#ffe6a0', 32, 52, 12, 1);
+      const b = Math.sin(t * 1.1) > 0 ? 0 : 1;   // 숨 쉬듯 윗몸이 1도트 오르내림
+      const cx = 120;
+      // 등 뒤 벽에 드리운 거대한 그림자 (스탠드 빛 때문에 실제보다 훨씬 크다)
+      const sh = '#0b0605', sx = cx + 16 + (fl ? 0 : 1);
+      disc(sh, sx, 6, 13);
+      for (let y = 16; y < 70; y++) { const hw = y < 26 ? 10 + (y - 16) * 3.6 : 46 - (y - 26) * 0.3; R(sh, sx - hw, y, hw * 2, 1); }
+      // 몸통: 넓은 어깨에서 허리로 좁아지는 역삼각형
+      const suit = '#3a0c12', dark = '#24060a', rimc = '#5a1820';
+      for (let y = 30; y < 70; y++) {
+        const hw = Math.round(y < 38 ? Math.min(34, 6 + (y - 29) * 3.2) : 34 - (y - 38) * 0.38);
+        R(suit, cx - hw, y + b, hw * 2, 1);
+        R(dark, cx + Math.round(hw * 0.35), y + b, Math.round(hw * 0.65), 1);   // 오른쪽 그늘
+        if (y > 34) R(rimc, cx - hw, y + b, 1, 1);                               // 스탠드 쪽 테두리 빛
+      }
+      for (let x = cx - 28; x < cx + 28; x += 5) R('#30080e', x, 42 + b, 1, 26); // 줄무늬
+      // 팔: 어깨 → 팔꿈치(바깥으로) → 책상 짚은 손목, 몸통과 이어진다
+      disc(suit, cx - 32, 40 + b, 5); disc(dark, cx + 32, 40 + b, 5);
+      ln(suit, cx - 34, 42 + b, cx - 42, 56, 9); ln(suit, cx - 42, 56, cx - 34, 67, 7);
+      ln(dark, cx + 34, 42 + b, cx + 42, 56, 9); ln(dark, cx + 42, 56, cx + 34, 67, 7);
+      ln(rimc, cx - 38, 40 + b, cx - 47, 55, 1); ln(rimc, cx - 47, 56, cx - 39, 67, 1); // 팔 테두리 빛
+      R('#160408', cx - 40, 55, 6, 1); R('#160408', cx + 34, 55, 6, 1);                 // 팔꿈치 주름
+      // 셔츠 · 넥타이 · 옷깃 · 단추
+      for (let y = 30; y < 48; y++) { const hw = Math.max(0, Math.round(4 - (y - 30) * 0.22)); R('#2a2624', cx - hw, y + b, hw * 2, 1); }
+      R('#140404', cx - 1, 32 + b, 3, 22); R('#3a0a0c', cx - 1, 32 + b, 3, 2);
+      ln('#4a1018', cx - 4, 30 + b, cx - 12, 50 + b, 2); ln('#1a0408', cx + 4, 30 + b, cx + 12, 50 + b, 2);
+      R('#140306', cx - 1, 57 + b, 2, 2); R('#140306', cx - 1, 63 + b, 2, 2);
+      // 굵은 목 · 각진 턱 · 머리: 얼굴은 완전히 그림자 속
+      const face = '#080505';
+      R('#0a0606', cx - 6, 25 + b, 12, 7);
+      disc(face, cx, 16 + b, 8); R(face, cx - 7, 16 + b, 14, 9); R(face, cx - 6, 25 + b, 12, 1); R(face, cx - 4, 26 + b, 8, 1);
+      R(face, cx - 9, 15 + b, 2, 5); R(face, cx + 7, 15 + b, 2, 5);      // 귀
+      disc('#040202', cx, 11 + b, 7); R('#040202', cx - 8, 10 + b, 16, 3); // 짧게 넘긴 머리
+      R('#1a0e0c', cx - 8, 14 + b, 1, 10); R('#1a0e0c', cx - 7, 24 + b, 2, 1); // 얼굴 왼쪽에 겨우 닿는 빛
+      // 희미한 안경 (동그란 테만 보인다)
+      const rim = '#3a3434';
+      for (const ex of [cx - 4, cx + 4]) {
+        R(rim, ex - 2, 16 + b, 4, 1); R(rim, ex - 2, 20 + b, 4, 1); R(rim, ex - 3, 17 + b, 1, 3); R(rim, ex + 2, 17 + b, 1, 3);
+        R('#120f12', ex - 2, 17 + b, 4, 3);
+      }
+      R(rim, cx - 1, 17 + b, 2, 1);
+      // 안경알 반사 (가끔 번쩍 지나감)
+      const gp = (t % 5) / 0.6;
+      R('#4a4650', cx - 5, 17 + b, 1, 1); R('#4a4650', cx + 3, 17 + b, 1, 1);
+      if (gp < 1) { const k = Math.floor(gp * 12); if (k < 4) R('#e0dce8', cx - 6 + k, 17 + b, 1, 2); else if (k > 6) R('#e0dce8', cx + 2 + k - 7, 17 + b, 1, 2); }
+      // 책상
+      R('#2e1c12', 0, 70, W, 30); R('#40281a', 0, 70, W, 2); for (let x = 4; x < W; x += 23) R('#28180e', x, 74, 14, 1);
+      // 책상을 짚은 손 (검은 가죽 장갑, 손가락을 펼침)
+      for (const [hx, dir] of [[cx - 34, -1], [cx + 34, 1]]) {
+        R('#120808', hx - 5, 66, 10, 5); R('#2a1a18', hx - 5, 66, 10, 1);
+        for (let i = 0; i < 4; i++) R('#120808', hx - 4 + i * 3, 71, 2, 3);
+        R('#120808', hx - dir * 7, 68, 3, 2);                             // 엄지
+        light('#1a0e0a', hx, 73, 9, 2, 0.9);                              // 손 그림자
+      }
+      // 계약서 · 만년필
+      R('#d8cfba', 150, 73, 30, 12); for (let y = 76; y < 83; y += 2) R('#8a7d66', 153, y, 20, 1);
+      R('#b01818', 174, 80, 3, 3); R('#101010', 184, 76, 14, 1); R('#c8a040', 196, 76, 2, 1);
+      out(c);
+    },
+
+    // 4. 달밤의 미술관
+    px_museum(c, t) {
+      // 하늘: 도트 그라데이션
+      dith('#05060e', '#0a0c1a', 0, 0, W, 20); dith('#0a0c1a', '#111528', 0, 20, W, 20); dith('#111528', '#161b30', 0, 40, W, 20);
+      for (const [x, y, k] of stars) if (Math.sin(t * 2 + k * 20) > -0.3) R(k > 0.7 ? '#e8e8ff' : '#8a8aa8', x, y);
+      disc('#e8e4cc', 206, 14, 7); R('#c8c4ac', 203, 12, 2, 2); R('#c8c4ac', 208, 16, 3, 2); R('#d0ccb4', 206, 10, 2, 1);
+      // 흘러가는 구름
+      const cxo = (t * 4) % 300;
+      [[0, 18, 40], [120, 10, 30], [200, 26, 36]].forEach(([x, y, w]) => { const X = ((x + cxo) % 300) - 40; R('#1c2038', X, y, w, 3); R('#1c2038', X + 6, y - 2, w - 12, 2); });
+      // 앙상한 나무 (양쪽)
+      const tree = (x, s) => { R('#06060a', x, 40, 3, 50); [[0, 46, -8], [2, 54, 7], [0, 60, -6], [2, 66, 9]].forEach(([dx, y, l]) => { for (let i = 0; i < Math.abs(l); i++) R('#06060a', x + dx + i * Math.sign(l) * s, y - i, 1, 1); }); };
+      tree(18, 1); tree(222, -1);
+      // 미술관 건물
+      R('#22242f', 40, 44, 160, 40);                                     // 몸통
+      for (let i = 0; i < 60; i++) { const x = 60 + i * 2, top = 44 - Math.round(20 * (1 - Math.abs(i - 30) / 30)); R('#2a2c3a', x, top, 2, 44 - top); }
+      R('#4a4c5e', 58, 43, 124, 1); for (let i = 0; i < 60; i++) R('#4a4c5e', 60 + i * 2, 44 - Math.round(20 * (1 - Math.abs(i - 30) / 30)), 2, 1); // 달빛 받은 윤곽
+      disc('#1a1c26', 120, 34, 3);
+      R('#33354a', 56, 44, 128, 4);                                      // 처마
+      for (let i = 0; i < 6; i++) { const x = 66 + i * 21; R('#3e4054', x, 48, 6, 32); R('#4e5066', x, 48, 1, 32); R('#2a2c3a', x + 5, 48, 1, 32); }
+      R('#0a0a10', 112, 62, 16, 18);                                     // 문
+      for (let s = 0; s < 4; s++) R(s % 2 ? '#2a2c38' : '#323444', 52 - s * 3, 80 + s * 2, 136 + s * 6, 2); // 계단
+      // 양쪽 날개 건물 창문 · 불 켜진 창 하나 (깜빡이고 가끔 누가 지나간다)
+      for (let i = 0; i < 2; i++) { R('#14161e', 44 + i * 6, 56, 3, 6); R('#14161e', 186 + i * 6, 56, 3, 6); }
+      const lit = Math.sin(t * 2.7) * Math.sin(t * 1.3) > -0.7;
+      R(lit ? '#e8b040' : '#4a3a18', 192, 56, 3, 6);
+      if (lit) { light('#3a2a10', 193, 94, 9, 4, 1); if ((t % 7) > 6.2) R('#2a1a08', 193, 57, 1, 4); }
+      // 가로등
+      R('#08080c', 30, 56, 2, 34); R('#3a3020', 28, 54, 6, 3); R(Math.sin(t * 17) > -0.9 ? '#ffe090' : '#6a5a30', 29, 56, 4, 2);
+      light('#2a2416', 31, 58, 14, 12, 1); light('#2a2416', 31, 92, 16, 5, 1);
+      // 땅 · 젖은 바닥 · 쇠창살 울타리
+      R('#0a0a10', 0, 86, W, 14);
+      for (let x = 0; x < W; x += 4) { R('#050508', x, 78, 1, 20); R('#050508', x - 1, 77, 3, 1); }
+      R('#050508', 0, 82, W, 1); R('#050508', 0, 94, W, 1);
+      out(c);
+    }
+  };
+})();
+
 let cutRAF = null;
 // 컷신: [{ art, text }] 를 한 줄씩. "(나)", "관장:" 으로 시작하면 이름표가 붙는다
 function cutscene(list, done) {
@@ -3695,7 +3953,8 @@ function cutscene(list, done) {
     lineStart = performance.now();
   };
   const frame = now => {
-    if (ART[art]) ART[art](c, (now - t0) / 1000);
+    const painter = PX[art] || ART[art]; // 인트로는 도트 그림
+    if (painter) painter(c, (now - t0) / 1000);
     if (!cur.done) {
       const n = Math.floor((now - lineStart) / 1000 * 32);
       if (n < cur.len) $('cutText').textContent = plain(cur.text).slice(0, n);
@@ -3779,7 +4038,7 @@ const DEATH_CUT = {
     { text: '관장: "할당량이 모자라네요. 괜찮아요, 한 장은 금방 채워요."' },
     { text: '액자 아래 명판에는 이미 이름이 적혀 있었다. 「무제 (야간 경비원)」' }]
 };
-const INTRO_ART = ['room', 'room', 'poster', 'poster', 'director', 'museum'];
+const INTRO_ART = ['px_room', 'px_room', 'px_poster', 'px_poster', 'px_director', 'px_museum'];
 
 // ===================== 길 안내 =====================
 let guideOn = true;
