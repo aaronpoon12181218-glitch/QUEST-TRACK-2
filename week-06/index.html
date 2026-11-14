@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f6f4f">
 <title>오늘 급식</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="오늘 급식">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
   :root {
     --bg: #f5f3ee;
@@ -102,6 +109,17 @@
   details { color: var(--sub); font-size: .85rem; margin-top: 16px; }
   details ol { padding-left: 1.6em; columns: 2; column-gap: 16px; }
   @media (min-width: 480px) { details ol { columns: 3; } }
+  .offline {
+    background: #fff5d9; color: #5a4300; border: 1px solid #e8c766;
+    border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; font-size: .95rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    .offline { background: #3a3218; color: #f3dc9a; border-color: #7a6526; }
+  }
+  .offline p { margin: 0 0 2px; }
+  .offline .strong { font-weight: 700; }
+  .offline .why { opacity: .8; font-size: .85rem; margin-top: 4px; }
+  .offline .btn { margin-top: 8px; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -325,40 +343,110 @@
       SD_SCHUL_CODE: school.code,
       MLSV_YMD: ymd
     }).then(function (rows) {
-      if (!rows.length) {
-        $("legend").classList.add("hidden");
-        // 급식이 없을 때: 학교 코드가 맞는지 한 번 더 확인해서, 틀렸으면 까닭을 보여 준다
-        return callApi("schoolInfo", { ATPT_OFCDC_SC_CODE: school.office, SD_SCHUL_CODE: school.code })
-          .then(function (found) {
-            if (!found.length) throw new Error("저장된 학교 코드로 학교를 찾을 수 없어요. '학교 바꾸기'로 학교를 다시 골라 주세요.");
-            showNotice(mealBox, "오늘은 급식이 없습니다", "주말·방학·휴일이거나 아직 식단이 올라오지 않았을 수 있어요.");
-          });
-      }
-      rows.sort(function (a, b) { return (+a.MMEAL_SC_CODE) - (+b.MMEAL_SC_CODE); });
-      mealBox.innerHTML = "";
-      rows.forEach(function (row) {
-        var card = el("article", "card");
-        card.appendChild(el("span", "meal-name", row.MMEAL_SC_NM || "급식"));
-        var ul = el("ul", "menu");
-        splitDishes(row.DDISH_NM).forEach(function (line) {
-          var d = parseDish(line);
-          var li = el("li", "", d.name);
-          if (d.allergy) {
-            var s = el("span", "allergy", d.allergy);
-            s.setAttribute("aria-label", "알레르기 " + d.allergy);
-            li.appendChild(s);
+      if (rows.length) return rows;
+      // 급식이 없을 때: 학교 코드가 맞는지 한 번 더 확인해서, 틀렸으면 까닭을 보여 준다
+      return callApi("schoolInfo", { ATPT_OFCDC_SC_CODE: school.office, SD_SCHUL_CODE: school.code })
+        .then(function (found) {
+          if (!found.length) {
+            var e = new Error("저장된 학교 코드로 학교를 찾을 수 없어요. '학교 바꾸기'로 학교를 다시 골라 주세요.");
+            e.badSchool = true;
+            throw e;
           }
-          ul.appendChild(li);
+          return [];
         });
-        card.appendChild(ul);
-        if (row.CAL_INFO) card.appendChild(el("p", "kcal", row.CAL_INFO));
-        mealBox.appendChild(card);
-      });
-      $("legend").classList.remove("hidden");
+    }).then(function (rows) {
+      var meals = toMeals(rows);
+      saveLastMeal({ office: school.office, code: school.code, ymd: ymd, meals: meals, fetchedAt: Date.now() });
+      mealBox.innerHTML = "";
+      renderMeals(meals);
     }).catch(function (err) {
       $("legend").classList.add("hidden");
-      showError(mealBox, err.message, function () { loadMeal(school); });
+      var last = !err.badSchool && loadLastMeal(school);
+      if (!last) {
+        showError(mealBox, err.message, function () { loadMeal(school); });
+        return;
+      }
+      // 못 받아 왔지만 전에 받아 둔 정보가 있으면, 언제 받은 것인지와 같이 보여 준다
+      mealBox.innerHTML = "";
+      var box = el("div", "offline");
+      box.setAttribute("role", "status");
+      box.appendChild(el("p", "strong", "새 정보를 받아 오지 못해서 마지막으로 받아 온 정보를 보여 드려요."));
+      box.appendChild(el("p", "", prettyTime(last.fetchedAt) + "에 받은 정보예요."));
+      if (last.ymd !== ymd) box.appendChild(el("p", "strong", "아래는 " + prettyDate(last.ymd) + " 급식이에요. 오늘 급식이 아니에요."));
+      box.appendChild(el("p", "why", "까닭: " + err.message));
+      var b = el("button", "btn", "다시 시도");
+      b.type = "button";
+      b.addEventListener("click", function () { loadMeal(school); });
+      box.appendChild(b);
+      mealBox.appendChild(box);
+      renderMeals(last.meals, last.ymd !== ymd ? last.ymd : null);
     });
+  }
+
+  // 나이스 답 → 화면에 필요한 것만 (저장도 이 모양으로)
+  function toMeals(rows) {
+    return rows.slice().sort(function (a, b) { return (+a.MMEAL_SC_CODE) - (+b.MMEAL_SC_CODE); })
+      .map(function (row) {
+        return {
+          type: row.MMEAL_SC_NM || "급식",
+          dishes: splitDishes(row.DDISH_NM).map(parseDish),
+          cal: row.CAL_INFO || ""
+        };
+      });
+  }
+
+  function renderMeals(meals, otherDay) {
+    if (!meals.length) {
+      if (otherDay) showNoticeInto(mealBox, prettyDate(otherDay) + "에는 급식이 없었어요", "");
+      else showNoticeInto(mealBox, "오늘은 급식이 없습니다", "주말·방학·휴일이거나 아직 식단이 올라오지 않았을 수 있어요.");
+      $("legend").classList.add("hidden");
+      return;
+    }
+    meals.forEach(function (meal) {
+      var card = el("article", "card");
+      card.appendChild(el("span", "meal-name", meal.type));
+      var ul = el("ul", "menu");
+      meal.dishes.forEach(function (d) {
+        var li = el("li", "", d.name);
+        if (d.allergy) {
+          var s = el("span", "allergy", d.allergy);
+          s.setAttribute("aria-label", "알레르기 " + d.allergy);
+          li.appendChild(s);
+        }
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+      if (meal.cal) card.appendChild(el("p", "kcal", meal.cal));
+      mealBox.appendChild(card);
+    });
+    $("legend").classList.remove("hidden");
+  }
+
+  function showNoticeInto(box, big, small) {
+    var card = el("div", "card notice");
+    card.appendChild(el("p", "big", big));
+    if (small) card.appendChild(el("p", "", small));
+    box.appendChild(card);
+  }
+
+  /* ---------- 마지막으로 받은 급식 저장 (이 기기에만) ---------- */
+  var LAST_KEY = "lunch-app-last-meal";
+  function saveLastMeal(data) {
+    try { localStorage.setItem(LAST_KEY, JSON.stringify(data)); } catch (e) {}
+  }
+  function loadLastMeal(school) {
+    try {
+      var v = JSON.parse(localStorage.getItem(LAST_KEY));
+      if (v && v.office === school.office && v.code === school.code && v.meals) return v;
+    } catch (e) {}
+    return null;
+  }
+  function prettyTime(ms) {
+    var f = new Intl.DateTimeFormat("ko-KR", {
+      timeZone: "Asia/Seoul", month: "long", day: "numeric", weekday: "short",
+      hour: "numeric", minute: "2-digit"
+    });
+    return f.format(new Date(ms));
   }
 
   /* ---------- 학교 찾기 ---------- */
@@ -414,6 +502,19 @@
     ? { office: qs.get("office"), code: qs.get("school"), name: "" } : null;
   var start = fromUrl || loadSchool();
   if (start) loadMeal(start); else openSearch();
+
+  // 인터넷이 다시 연결되면 저절로 새 급식을 받아 온다
+  window.addEventListener("online", function () {
+    var s = fromUrl || loadSchool();
+    if (s && $("searchBox").classList.contains("hidden")) loadMeal(s);
+  });
+
+  /* ---------- 폰에 설치되는 앱: 서비스 워커 ---------- */
+  if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    });
+  }
 })();
 </script>
 </body>
