@@ -267,13 +267,44 @@
     return n;
   }
 
+  /* ---------- 식단 글자 → 메뉴 줄 목록 ---------- */
+  // &lt;br/&gt; 처럼 글자로 바뀐 줄바꿈, &amp; 같은 기호를 먼저 되살린 뒤 줄을 나눈다
+  function decodeEntities(s) {
+    var t = document.createElement("textarea");
+    for (var i = 0; i < 3 && /&[#a-z0-9]+;/i.test(s); i++) { t.innerHTML = s; s = t.value; }
+    return s;
+  }
+  function splitDishes(raw) {
+    return decodeEntities(String(raw || ""))
+      .split(/<\s*br\s*\/?\s*>|\r?\n/i)
+      .map(function (l) { return l.replace(/<[^>]*>/g, "").trim(); })
+      .filter(Boolean);
+  }
+
   /* ---------- 메뉴 한 줄 나누기: 이름 + 알레르기 번호 ---------- */
+  var NUM_PAREN = /[(（]\s*(\d{1,2}(?:\s*[.,]\s*\d{1,2})*)\s*[.,]?\s*[)）]/g;   // (5.6.13) （1,2）
+  var NUM_TAIL = /((?:\d{1,2}\.)+\d{0,2})\s*$/;                                 // 쌀밥5.6.13.
   function parseDish(line) {
-    var text = line.replace(/&amp;/g, "&").trim();
-    var m = text.match(/\s*\(([\d.\s]+)\)\s*$/) || text.match(/((?:\d{1,2}\.)+)\s*$/);
-    if (!m) return { name: text, allergy: "" };
-    var nums = m[1].split(/[.\s]+/).filter(Boolean).join(", ");
-    return { name: text.slice(0, m.index).trim() || text, allergy: nums };
+    var text = line.replace(/\s+/g, " ").trim();
+    var nums = [];
+    text = text.replace(NUM_PAREN, function (_, n) { nums = nums.concat(n.split(/[.,\s]+/)); return " "; });
+    var tail = text.match(NUM_TAIL);
+    if (tail && /[^\d.\s]/.test(text.slice(0, tail.index))) {
+      nums = nums.concat(tail[1].split("."));
+      text = text.slice(0, tail.index);
+    }
+    // 학교마다 붙이는 표시(*, #, ★, 끝의 s·-·/ 등)를 떼어 낸다
+    var name = text
+      .replace(/^[\s*#★☆●○◎◆◇■□▶·\-]+/, "")
+      .replace(/[\s*#★☆●○◎◆◇■□·\-\/]*(?:\*s|\*S)?[\s*#★☆●○◎◆◇■□·\-\/]*$/, "")
+      .replace(/\s*\(\s*\)\s*/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    var seen = {};
+    nums = nums.filter(function (n) {
+      n = +n; if (!n || n > 19 || seen[n]) return false; seen[n] = 1; return true;
+    }).map(Number).sort(function (a, b) { return a - b; });
+    return { name: name || line.trim(), allergy: nums.join(", ") };
   }
 
   /* ---------- 급식 보여 주기 ---------- */
@@ -309,8 +340,7 @@
         var card = el("article", "card");
         card.appendChild(el("span", "meal-name", row.MMEAL_SC_NM || "급식"));
         var ul = el("ul", "menu");
-        String(row.DDISH_NM || "").split(/<br\s*\/?>/i).forEach(function (line) {
-          if (!line.trim()) return;
+        splitDishes(row.DDISH_NM).forEach(function (line) {
           var d = parseDish(line);
           var li = el("li", "", d.name);
           if (d.allergy) {
